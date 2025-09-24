@@ -1,0 +1,363 @@
+import React, { useState, useEffect } from 'react';
+import { Container, Row, Col, Card, Form, Button, Alert, ProgressBar, Spinner } from 'react-bootstrap';
+import { FaSearch, FaBookOpen, FaPlus, FaCog, FaTrash } from 'react-icons/fa';
+import { searchPapers, summarizePaper, testConnection } from '../services/api';
+
+const Home = ({ readingList, addToReadingList, settings, setSettings }) => {
+  const [topic, setTopic] = useState('');
+  const [papers, setPapers] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [progress, setProgress] = useState(0);
+  const [statusText, setStatusText] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
+  const [manualMode, setManualMode] = useState(false);
+  const [manualPaper, setManualPaper] = useState({
+    title: '',
+    authors: '',
+    abstract: '',
+    url: ''
+  });
+  const [connectionStatus, setConnectionStatus] = useState('checking');
+
+  // Test backend connection on component mount
+  useEffect(() => {
+    const checkConnection = async () => {
+      console.log('🔍 Testing backend connection...');
+      const isConnected = await testConnection();
+      console.log('🔍 Backend connection status:', isConnected ? 'CONNECTED' : 'DISCONNECTED');
+      setConnectionStatus(isConnected ? 'connected' : 'disconnected');
+    };
+    checkConnection();
+  }, []);
+
+  const handleSearch = async () => {
+    console.log('🚀 Starting search process...');
+    console.log('📝 Topic:', topic);
+    console.log('⚙️ Settings:', settings);
+    console.log('🔗 Connection Status:', connectionStatus);
+    
+    if (!topic.trim()) {
+      console.log('❌ No topic provided');
+      setError('Please enter a research topic');
+      return;
+    }
+
+    if (connectionStatus === 'disconnected') {
+      console.log('❌ Backend disconnected');
+      setError('Backend server is not running. Please start the backend server on port 5000.');
+      return;
+    }
+
+    console.log('✅ Starting search with backend...');
+    setLoading(true);
+    setError('');
+    setSuccess('');
+    setProgress(0);
+    setStatusText('Searching for papers...');
+
+    try {
+      console.log('📡 Calling searchPapers API...');
+      const results = await searchPapers(topic, settings);
+      console.log('✅ Search successful! Results:', results);
+      setPapers(results);
+      setSuccess(`Found ${results.length} papers!`);
+    } catch (err) {
+      console.error('❌ Search failed:', err);
+      console.error('❌ Error details:', {
+        message: err.message,
+        stack: err.stack,
+        name: err.name
+      });
+      setError(err.message || 'Failed to search papers');
+    } finally {
+      console.log('🏁 Search process completed');
+      setLoading(false);
+      setProgress(0);
+      setStatusText('');
+    }
+  };
+
+  const handleSummarize = async (paper) => {
+    setLoading(true);
+    setStatusText('Generating summary...');
+    
+    try {
+      const summary = await summarizePaper(paper.abstract);
+      setSuccess(`Summary for "${paper.title}": ${summary}`);
+    } catch (err) {
+      setError('Failed to generate summary');
+    } finally {
+      setLoading(false);
+      setStatusText('');
+    }
+  };
+
+  const handleAddToReadingList = (paper) => {
+    addToReadingList(paper);
+    setSuccess(`Added "${paper.title}" to reading list!`);
+  };
+
+  const handleManualAdd = () => {
+    if (!manualPaper.title || !manualPaper.authors || !manualPaper.abstract) {
+      setError('Please fill in title, authors, and abstract');
+      return;
+    }
+    
+    addToReadingList(manualPaper);
+    setManualPaper({ title: '', authors: '', abstract: '', url: '' });
+    setManualMode(false);
+    setSuccess('Paper added to reading list!');
+  };
+
+  return (
+    <div className="research-page">
+      <Container fluid className="px-4">
+        <div className="text-center mb-4">
+          <h1 className="page-title">
+            <FaBookOpen className="me-3" />
+            Profistant - Your Research Kick-Starter
+          </h1>
+          <p className="text-white-50 fs-6">
+            AI-powered research assistant designed to help you kick-start your academic journey
+          </p>
+        </div>
+
+        <Row className="g-3">
+          <Col lg={12}>
+          <Card className="search-card">
+            <Card.Body className="p-4">
+              <h4 className="card-title mb-3">
+                <FaSearch className="me-2 text-primary" />
+                Search Research Papers
+              </h4>
+              
+              <Form.Group className="mb-3">
+                <Form.Control
+                  type="text"
+                  placeholder="Enter your research topic or area of interest..."
+                  value={topic}
+                  onChange={(e) => setTopic(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                  className="form-control-lg"
+                />
+              </Form.Group>
+
+              <div className="d-flex gap-2 mb-3">
+                <Button 
+                  variant="primary" 
+                  onClick={handleSearch}
+                  disabled={loading}
+                  className="flex-fill"
+                  size="lg"
+                >
+                  {loading ? (
+                    <>
+                      <Spinner size="sm" className="me-2" />
+                      Searching...
+                    </>
+                  ) : (
+                    <>
+                      <FaSearch className="me-2" />
+                      Search Papers
+                    </>
+                  )}
+                </Button>
+                <Button 
+                  variant="outline-secondary"
+                  onClick={() => setShowSettings(!showSettings)}
+                  size="lg"
+                >
+                  <FaCog />
+                </Button>
+              </div>
+
+              {loading && (
+                <div className="mb-3">
+                  <ProgressBar now={progress} className="mb-2" />
+                  <small className="text-muted">{statusText}</small>
+                </div>
+              )}
+
+              {/* Connection Status */}
+              <div className="mb-3">
+                <small className={`badge ${connectionStatus === 'connected' ? 'bg-success' : connectionStatus === 'disconnected' ? 'bg-danger' : 'bg-warning'}`}>
+                  {connectionStatus === 'connected' ? '🟢 Backend Connected' : 
+                   connectionStatus === 'disconnected' ? '🔴 Backend Disconnected' : 
+                   '🟡 Checking Connection...'}
+                </small>
+              </div>
+
+              {error && <Alert variant="danger">{error}</Alert>}
+              {success && <Alert variant="success">{success}</Alert>}
+
+              {showSettings && (
+                <Card className="mt-3">
+                  <Card.Body className="p-3">
+                    <h6 className="mb-3">Advanced Settings</h6>
+                    <Row>
+                      <Col md={6}>
+                        <Form.Group className="mb-3">
+                          <Form.Label className="small">Timeout (seconds)</Form.Label>
+                          <Form.Range
+                            min="5"
+                            max="30"
+                            value={settings.timeout}
+                            onChange={(e) => setSettings({...settings, timeout: parseInt(e.target.value)})}
+                          />
+                          <small className="text-muted">{settings.timeout}s</small>
+                        </Form.Group>
+                      </Col>
+                      <Col md={6}>
+                        <Form.Group className="mb-3">
+                          <Form.Check
+                            type="checkbox"
+                            label="Use Proxy"
+                            checked={settings.useProxy}
+                            onChange={(e) => setSettings({...settings, useProxy: e.target.checked})}
+                          />
+                        </Form.Group>
+                      </Col>
+                    </Row>
+                  </Card.Body>
+                </Card>
+              )}
+
+              {papers.length > 0 && (
+                <div className="mt-3">
+                  <h5 className="mb-3">Found Papers:</h5>
+                  <div className="papers-container">
+                    {papers.map((paper, index) => (
+                      <Card key={index} className="paper-card mb-3">
+                        <Card.Body className="p-3">
+                          <h6 className="card-title mb-2">{paper.title}</h6>
+                          <p className="text-muted mb-2 small">
+                            <strong>Authors:</strong> {paper.authors}
+                          </p>
+                          <p className="card-text small mb-3">{paper.abstract}</p>
+                          <div className="d-flex gap-2 flex-wrap">
+                            <Button 
+                              variant="outline-primary" 
+                              size="sm"
+                              onClick={() => handleSummarize(paper)}
+                              disabled={loading}
+                            >
+                              Summarize
+                            </Button>
+                            <Button 
+                              variant="outline-success" 
+                              size="sm"
+                              onClick={() => handleAddToReadingList(paper)}
+                            >
+                              <FaPlus className="me-1" />
+                              Add to List
+                            </Button>
+                            {paper.url && paper.url !== '#' && (
+                              <Button 
+                                variant="outline-info" 
+                                size="sm"
+                                href={paper.url}
+                                target="_blank"
+                              >
+                                View Paper
+                              </Button>
+                            )}
+                          </div>
+                        </Card.Body>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {error && !loading && (
+                <div className="mt-3">
+                  <h6>Alternative Options:</h6>
+                  <div className="d-flex gap-2">
+                    <Button 
+                      variant="outline-warning" 
+                      onClick={handleSearch}
+                      size="sm"
+                    >
+                      Try Again
+                    </Button>
+                    <Button 
+                      variant="outline-info"
+                      onClick={() => setManualMode(true)}
+                      size="sm"
+                    >
+                      Manual Input
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {manualMode && (
+                <Card className="mt-3">
+                  <Card.Body className="p-3">
+                    <h6 className="mb-3">Manual Paper Input</h6>
+                    <Row>
+                      <Col md={6}>
+                        <Form.Group className="mb-3">
+                          <Form.Label className="small">Paper Title</Form.Label>
+                          <Form.Control
+                            type="text"
+                            value={manualPaper.title}
+                            onChange={(e) => setManualPaper({...manualPaper, title: e.target.value})}
+                            size="sm"
+                          />
+                        </Form.Group>
+                      </Col>
+                      <Col md={6}>
+                        <Form.Group className="mb-3">
+                          <Form.Label className="small">Authors</Form.Label>
+                          <Form.Control
+                            type="text"
+                            value={manualPaper.authors}
+                            onChange={(e) => setManualPaper({...manualPaper, authors: e.target.value})}
+                            size="sm"
+                          />
+                        </Form.Group>
+                      </Col>
+                    </Row>
+                    <Form.Group className="mb-3">
+                      <Form.Label className="small">Abstract</Form.Label>
+                      <Form.Control
+                        as="textarea"
+                        rows={2}
+                        value={manualPaper.abstract}
+                        onChange={(e) => setManualPaper({...manualPaper, abstract: e.target.value})}
+                        size="sm"
+                      />
+                    </Form.Group>
+                    <Form.Group className="mb-3">
+                      <Form.Label className="small">URL (optional)</Form.Label>
+                      <Form.Control
+                        type="url"
+                        value={manualPaper.url}
+                        onChange={(e) => setManualPaper({...manualPaper, url: e.target.value})}
+                        size="sm"
+                      />
+                    </Form.Group>
+                    <div className="d-flex gap-2">
+                      <Button variant="success" onClick={handleManualAdd} size="sm">
+                        Add Paper
+                      </Button>
+                      <Button variant="outline-secondary" onClick={() => setManualMode(false)} size="sm">
+                        Cancel
+                      </Button>
+                    </div>
+                  </Card.Body>
+                </Card>
+              )}
+            </Card.Body>
+          </Card>
+        </Col>
+        </Row>
+      </Container>
+    </div>
+  );
+};
+
+export default Home;
