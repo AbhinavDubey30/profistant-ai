@@ -4,7 +4,7 @@ const API_BASE_URL = process.env.REACT_APP_API_URL || (process.env.NODE_ENV === 
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 30000,
+  timeout: 60000, // Increased to 60 seconds
 });
 
 // Test connection to backend
@@ -25,20 +25,30 @@ export const searchPapers = async (topic, settings) => {
     const response = await api.post('/api/search-papers', {
       topic,
       settings
+    }, {
+      timeout: 90000 // 90 seconds for search specifically
     });
     console.log('Search response:', response.data);
     return response.data.papers;
   } catch (error) {
     console.error('Search error:', error);
+    
+    if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+      throw new Error('Search is taking too long. The scholarly API might be slow. Please try again with a more specific search term.');
+    }
+    
     if (error.response?.data?.error) {
       throw new Error(error.response.data.error);
     }
+    
     if (error.code === 'ECONNREFUSED') {
-      throw new Error('Cannot connect to server. Please make sure the backend is running on port 5000.');
+      throw new Error('Cannot connect to server. Please make sure the backend is running.');
     }
+    
     if (error.message.includes('Network Error')) {
       throw new Error('Network error. Please check your connection and try again.');
     }
+    
     throw new Error(`Failed to search papers: ${error.message}`);
   }
 };

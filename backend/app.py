@@ -26,10 +26,10 @@ except Exception as e:
     logger.error(f"Failed to initialize Gemini client: {e}")
 
 # Initialize scholarly with default settings
-scholarly.set_timeout(15)
-logger.info("Scholarly library initialized with 15s timeout")
+scholarly.set_timeout(30)  # Increased timeout
+logger.info("Scholarly library initialized with 30s timeout")
 
-def search_papers_with_retry(topic, max_retries=3, timeout=15):
+def search_papers_with_retry(topic, max_retries=3, timeout=30):
     """
     Search for papers with retry mechanism and error handling
     """
