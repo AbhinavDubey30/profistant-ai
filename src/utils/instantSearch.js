@@ -39,11 +39,8 @@ export const getInstantPapers = (topic) => {
     }
   ];
 
-  // Return papers with topic-specific titles but real URLs
-  return realPapers.map((paper, index) => ({
-    ...paper,
-    title: paper.title.replace(/Deep Learning|Machine Learning|AI|Artificial Intelligence/g, topic)
-  }));
+  // Return papers with original titles that match the URLs
+  return realPapers;
 };
 
 export const getInstantSummary = (abstract) => {
