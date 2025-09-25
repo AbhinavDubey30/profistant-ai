@@ -9,7 +9,9 @@
     "test": "react-scripts test",
     "eject": "react-scripts eject",
     "dev": "concurrently \"npm start\" \"python backend/app.py\"",
-    "vercel-build": "react-scripts build"
+    "vercel-build": "react-scripts build",
+    "predeploy": "npm run build",
+    "deploy": "vercel --prod"
   },
   "dependencies": {
     "react": "^18.2.0",
