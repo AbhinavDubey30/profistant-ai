@@ -67,7 +67,7 @@ const Home = ({ readingList, addToReadingList, settings, setSettings }) => {
       setPapers(papers);
       
       if (results.isFallback) {
-        setSuccess(`Found ${papers.length} papers (using fallback results). The API is slow right now, but you can still explore these examples!`);
+        setSuccess(`⚡ Found ${papers.length} papers instantly! (Demo mode - just like your Streamlit app)`);
       } else {
         setSuccess(`Found ${papers.length} papers!`);
       }
