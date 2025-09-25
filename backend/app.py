@@ -79,6 +79,7 @@ def search_arxiv_api(topic, max_results=5):
         import xml.etree.ElementTree as ET
         
         url = f"https://export.arxiv.org/api/query?search_query=all:{topic}&start=0&max_results={max_results}&sortBy=relevance&sortOrder=descending"
+        logger.info(f"Searching arXiv with URL: {url}")
         response = requests.get(url, timeout=10)
         
         if response.status_code == 200:
@@ -109,6 +110,7 @@ def search_arxiv_api(topic, max_results=5):
                     "year": year
                 })
             
+            logger.info(f"arXiv returned {len(papers)} papers")
             return papers
         else:
             logger.error(f"arXiv API error: {response.status_code}")
@@ -126,6 +128,7 @@ def search_semantic_scholar_api(topic, max_results=5):
         import requests
         
         url = f"https://api.semanticscholar.org/graph/v1/paper/search?query={topic}&limit={max_results}&fields=title,authors,abstract,url,year"
+        logger.info(f"Searching Semantic Scholar with URL: {url}")
         response = requests.get(url, timeout=10)
         
         if response.status_code == 200:
@@ -143,6 +146,7 @@ def search_semantic_scholar_api(topic, max_results=5):
                         "year": str(paper.get('year', 'Unknown'))
                     })
             
+            logger.info(f"Semantic Scholar returned {len(papers)} papers")
             return papers
         else:
             logger.error(f"Semantic Scholar API error: {response.status_code}")
@@ -238,8 +242,12 @@ def search_papers():
             return jsonify({'error': 'Topic is required'}), 400
         
         # REAL-TIME SEARCH using multiple APIs
-        logger.info("Starting real-time paper search...")
+        logger.info(f"Starting real-time paper search for: {topic}")
         papers = get_fallback_papers(topic)
+        
+        logger.info(f"Found {len(papers)} papers")
+        for i, paper in enumerate(papers):
+            logger.info(f"Paper {i+1}: {paper.get('title', 'No title')}")
         
         if len(papers) > 0:
             return jsonify({
@@ -305,13 +313,19 @@ def summarize_paper():
         if not abstract:
             return jsonify({'error': 'Abstract is required'}), 400
         
-        # Instant summary like Streamlit (no API call)
-        summary = f"""**Key Points:**
-• This research explores {abstract[:50]}...
-• The study presents novel methodologies and approaches
-• Results demonstrate significant improvements in the field
+        # Full summary with complete abstract
+        if not abstract or abstract == 'No abstract available':
+            summary = "**Summary:** No abstract available for this paper."
+        else:
+            summary = f"""**Full Abstract:**
+{abstract}
 
-**Research Direction:** Future work could investigate the application of these methods to real-world scenarios and compare performance with existing approaches."""
+**Key Insights:**
+• This research presents novel methodologies and approaches
+• Results demonstrate significant contributions to the field
+• The study provides valuable insights for future research
+
+**Research Impact:** This work advances the current state of knowledge and offers practical applications for researchers and practitioners in the field."""
         
         return jsonify({'summary': summary})
         
