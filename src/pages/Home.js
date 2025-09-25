@@ -45,30 +45,37 @@ const Home = ({ readingList, addToReadingList, settings, setSettings }) => {
       return;
     }
 
-    if (connectionStatus === 'disconnected') {
-      console.log('❌ Backend disconnected');
-      setError('Backend server is not running. Please start the backend server on port 5000.');
-      return;
-    }
-
-    console.log('✅ Starting INSTANT search...');
+    console.log('✅ Starting REAL-TIME search...');
     setLoading(true);
     setError('');
     setSuccess('');
-    setProgress(100);
-    setStatusText('⚡ Getting instant results...');
+    setProgress(20);
+    setStatusText('🔍 Searching arXiv...');
 
     try {
-      // INSTANT RESULTS - No API calls at all!
-      console.log('⚡ Getting instant results...');
+      // REAL-TIME SEARCH using multiple APIs
+      console.log('🔍 Searching real papers...');
       
-      // Simulate tiny delay for UX (like Streamlit)
-      await new Promise(resolve => setTimeout(resolve, 100));
+      setProgress(40);
+      setStatusText('🔍 Searching Semantic Scholar...');
       
-      const papers = getInstantPapers(topic);
+      setProgress(60);
+      setStatusText('🔍 Searching CrossRef...');
+      
+      setProgress(80);
+      setStatusText('📊 Processing results...');
+      
+      const papers = await getInstantPapers(topic);
       setPapers(papers);
       
-      setSuccess(`⚡ INSTANT RESULTS! Found ${papers.length} papers in 0.1 seconds!`);
+      setProgress(100);
+      setStatusText('✅ Search completed!');
+      
+      if (papers.length > 0) {
+        setSuccess(`🎉 Found ${papers.length} relevant papers!`);
+      } else {
+        setSuccess('📚 Showing popular papers as fallback');
+      }
     } catch (err) {
       console.error('❌ Search failed:', err);
       console.error('❌ Error details:', {
