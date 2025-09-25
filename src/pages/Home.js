@@ -61,8 +61,16 @@ const Home = ({ readingList, addToReadingList, settings, setSettings }) => {
       console.log('📡 Calling searchPapers API...');
       const results = await searchPapers(topic, settings);
       console.log('✅ Search successful! Results:', results);
-      setPapers(results);
-      setSuccess(`Found ${results.length} papers!`);
+      
+      // Handle both old format (array) and new format (object with papers)
+      const papers = Array.isArray(results) ? results : results.papers;
+      setPapers(papers);
+      
+      if (results.isFallback) {
+        setSuccess(`Found ${papers.length} papers (using fallback results). The API is slow right now, but you can still explore these examples!`);
+      } else {
+        setSuccess(`Found ${papers.length} papers!`);
+      }
     } catch (err) {
       console.error('❌ Search failed:', err);
       console.error('❌ Error details:', {

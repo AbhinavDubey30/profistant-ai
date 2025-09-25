@@ -29,7 +29,17 @@ export const searchPapers = async (topic, settings) => {
       timeout: 90000 // 90 seconds for search specifically
     });
     console.log('Search response:', response.data);
-    return response.data.papers;
+    
+    // Handle fallback results
+    if (response.data.fallback) {
+      console.warn('Using fallback results:', response.data.message);
+    }
+    
+    return {
+      papers: response.data.papers,
+      isFallback: response.data.fallback || false,
+      message: response.data.message || null
+    };
   } catch (error) {
     console.error('Search error:', error);
     
