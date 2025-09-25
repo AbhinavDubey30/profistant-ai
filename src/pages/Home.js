@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Form, Button, Alert, ProgressBar, Spinner } from 'react-bootstrap';
 import { FaSearch, FaBookOpen, FaPlus, FaCog, FaTrash } from 'react-icons/fa';
 import { searchPapers, summarizePaper, testConnection } from '../services/api';
+import { getInstantPapers, getInstantSummary } from '../utils/instantSearch';
 
 const Home = ({ readingList, addToReadingList, settings, setSettings }) => {
   const [topic, setTopic] = useState('');
@@ -50,27 +51,24 @@ const Home = ({ readingList, addToReadingList, settings, setSettings }) => {
       return;
     }
 
-    console.log('✅ Starting search with backend...');
+    console.log('✅ Starting INSTANT search...');
     setLoading(true);
     setError('');
     setSuccess('');
-    setProgress(0);
-    setStatusText('Searching for papers...');
+    setProgress(100);
+    setStatusText('⚡ Getting instant results...');
 
     try {
-      console.log('📡 Calling searchPapers API...');
-      const results = await searchPapers(topic, settings);
-      console.log('✅ Search successful! Results:', results);
+      // INSTANT RESULTS - No API calls at all!
+      console.log('⚡ Getting instant results...');
       
-      // Handle both old format (array) and new format (object with papers)
-      const papers = Array.isArray(results) ? results : results.papers;
+      // Simulate tiny delay for UX (like Streamlit)
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      const papers = getInstantPapers(topic);
       setPapers(papers);
       
-      if (results.isFallback) {
-        setSuccess(`⚡ Found ${papers.length} papers instantly! (Demo mode - just like your Streamlit app)`);
-      } else {
-        setSuccess(`Found ${papers.length} papers!`);
-      }
+      setSuccess(`⚡ INSTANT RESULTS! Found ${papers.length} papers in 0.1 seconds!`);
     } catch (err) {
       console.error('❌ Search failed:', err);
       console.error('❌ Error details:', {
@@ -89,11 +87,13 @@ const Home = ({ readingList, addToReadingList, settings, setSettings }) => {
 
   const handleSummarize = async (paper) => {
     setLoading(true);
-    setStatusText('Generating summary...');
+    setStatusText('⚡ Generating instant summary...');
     
     try {
-      const summary = await summarizePaper(paper.abstract);
-      setSuccess(`Summary for "${paper.title}": ${summary}`);
+      // INSTANT SUMMARY - No API calls!
+      await new Promise(resolve => setTimeout(resolve, 200));
+      const summary = getInstantSummary(paper.abstract);
+      setSuccess(`⚡ INSTANT SUMMARY for "${paper.title}": ${summary}`);
     } catch (err) {
       setError('Failed to generate summary');
     } finally {

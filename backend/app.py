@@ -133,12 +133,12 @@ def search_papers():
             logger.error("No topic provided")
             return jsonify({'error': 'Topic is required'}), 400
         
-        # Skip the slow API and use instant fallback papers (like Streamlit)
-        logger.info("Using instant fallback papers for fast response...")
+        # INSTANT RESULTS - No API calls, no waiting!
+        logger.info("Returning instant papers immediately...")
         papers = get_fallback_papers(topic)
         return jsonify({
             'papers': papers,
-            'message': 'Instant results! (Demo mode - like your original Streamlit app)',
+            'message': '⚡ INSTANT RESULTS! (Super fast demo mode)',
             'fallback': True
         })
         
