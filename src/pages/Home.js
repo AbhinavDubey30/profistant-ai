@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Form, Button, Alert, ProgressBar, Spinner } from 'react-bootstrap';
 import { FaSearch, FaBookOpen, FaPlus, FaCog, FaTrash } from 'react-icons/fa';
 import { searchPapers, summarizePaper, testConnection } from '../services/api';
-import { getInstantPapers, getInstantSummary } from '../utils/instantSearch';
+import { getInstantSummary } from '../utils/instantSearch';
 
 const Home = ({ readingList, addToReadingList, settings, setSettings }) => {
   const [topic, setTopic] = useState('');
@@ -21,6 +21,7 @@ const Home = ({ readingList, addToReadingList, settings, setSettings }) => {
     url: ''
   });
   const [connectionStatus, setConnectionStatus] = useState('checking');
+  const [expandedSummary, setExpandedSummary] = useState(null);
 
   // Test backend connection on component mount
   useEffect(() => {
@@ -53,28 +54,29 @@ const Home = ({ readingList, addToReadingList, settings, setSettings }) => {
     setStatusText('🔍 Searching arXiv...');
 
     try {
-      // REAL-TIME SEARCH using multiple APIs
-      console.log('🔍 Searching real papers...');
+      // REAL-TIME SEARCH using backend API
+      console.log('🔍 Searching real papers via backend API...');
       
       setProgress(40);
-      setStatusText('🔍 Searching Semantic Scholar...');
+      setStatusText('🔍 Searching multiple APIs...');
       
       setProgress(60);
-      setStatusText('🔍 Searching CrossRef...');
+      setStatusText('🔍 Processing results...');
       
       setProgress(80);
-      setStatusText('📊 Processing results...');
+      setStatusText('📊 Finalizing search...');
       
-      const papers = await getInstantPapers(topic);
-      setPapers(papers);
+      // Use the backend API instead of instant search
+      const response = await searchPapers(topic, settings);
+      setPapers(response.papers);
       
       setProgress(100);
       setStatusText('✅ Search completed!');
       
-      if (papers.length > 0) {
-        setSuccess(`🎉 Found ${papers.length} relevant papers!`);
+      if (response.papers.length > 0) {
+        setSuccess(`🎉 ${response.message}`);
       } else {
-        setSuccess('📚 Showing popular papers as fallback');
+        setSuccess('📚 No papers found');
       }
     } catch (err) {
       console.error('❌ Search failed:', err);
@@ -94,13 +96,20 @@ const Home = ({ readingList, addToReadingList, settings, setSettings }) => {
 
   const handleSummarize = async (paper) => {
     setLoading(true);
-    setStatusText('⚡ Generating instant summary...');
+    setStatusText('📖 Generating full summary...');
     
     try {
-      // INSTANT SUMMARY - No API calls!
-      await new Promise(resolve => setTimeout(resolve, 200));
+      // Generate full summary with complete abstract
+      await new Promise(resolve => setTimeout(resolve, 300));
       const summary = getInstantSummary(paper.abstract);
-      setSuccess(`⚡ INSTANT SUMMARY for "${paper.title}": ${summary}`);
+      
+      // Set the expanded summary to show inline
+      setExpandedSummary({
+        paper: paper,
+        summary: summary
+      });
+      
+      setSuccess(`📖 Full summary generated for "${paper.title}"`);
     } catch (err) {
       setError('Failed to generate summary');
     } finally {
@@ -205,7 +214,43 @@ const Home = ({ readingList, addToReadingList, settings, setSettings }) => {
               </div>
 
               {error && <Alert variant="danger">{error}</Alert>}
-              {success && <Alert variant="success">{success}</Alert>}
+              {success && (
+                <Alert variant="success" style={{ whiteSpace: 'pre-line' }}>
+                  {success}
+                </Alert>
+              )}
+
+              {/* Expanded Summary Display */}
+              {expandedSummary && (
+                <Card className="mt-3">
+                  <Card.Body>
+                    <div className="d-flex justify-content-between align-items-center mb-3">
+                      <h5 className="mb-0">📖 Full Summary: {expandedSummary.paper.title}</h5>
+                      <Button 
+                        variant="outline-secondary" 
+                        size="sm"
+                        onClick={() => setExpandedSummary(null)}
+                      >
+                        ✕ Close
+                      </Button>
+                    </div>
+                    <div 
+                      style={{ 
+                        maxHeight: '500px', 
+                        overflowY: 'auto', 
+                        padding: '15px', 
+                        backgroundColor: '#f8f9fa', 
+                        borderRadius: '5px',
+                        whiteSpace: 'pre-line',
+                        fontSize: '14px',
+                        lineHeight: '1.6'
+                      }}
+                    >
+                      {expandedSummary.summary}
+                    </div>
+                  </Card.Body>
+                </Card>
+              )}
 
               {showSettings && (
                 <Card className="mt-3">

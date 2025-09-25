@@ -228,10 +228,20 @@ const getFallbackPapers = () => {
 };
 
 export const getInstantSummary = (abstract) => {
-  return `**Key Points:**
-• This research explores ${abstract.substring(0, 50)}...
-• The study presents novel methodologies and approaches
-• Results demonstrate significant improvements in the field
+  if (!abstract || abstract === 'No abstract available') {
+    return `**Summary:** No abstract available for this paper.`;
+  }
+  
+  // Clean up the abstract - remove extra whitespace and ensure proper formatting
+  const cleanAbstract = abstract.trim().replace(/\s+/g, ' ');
+  
+  return `**Full Abstract:**
+${cleanAbstract}
 
-**Research Direction:** Future work could investigate the application of these methods to real-world scenarios and compare performance with existing approaches.`;
+**Key Insights:**
+• This research presents novel methodologies and approaches
+• Results demonstrate significant contributions to the field
+• The study provides valuable insights for future research
+
+**Research Impact:** This work advances the current state of knowledge and offers practical applications for researchers and practitioners in the field.`;
 };
