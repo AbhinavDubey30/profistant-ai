@@ -26,7 +26,7 @@ export const searchPapers = async (topic, settings) => {
       topic,
       settings
     }, {
-      timeout: 90000 // 90 seconds for search specifically
+      timeout: 15000 // 15 seconds for quick fallback
     });
     console.log('Search response:', response.data);
     
