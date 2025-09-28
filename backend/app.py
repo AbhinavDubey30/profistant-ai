@@ -151,10 +151,19 @@ def advanced_relevance_scoring(paper, original_topic, query_variations=None):
         'vital': ['health', 'medical', 'physiological', 'biometric'],
         'monitoring': ['sensing', 'detection', 'measurement', 'tracking'],
         'contactless': ['non-contact', 'remote', 'wireless', 'touchless'],
-        'machine learning': ['ml', 'ai', 'artificial intelligence', 'neural', 'deep learning'],
-        'deep learning': ['neural network', 'cnn', 'rnn', 'transformer', 'bert'],
-        'computer vision': ['cv', 'image', 'visual', 'optical', 'camera'],
-        'natural language': ['nlp', 'text', 'language', 'linguistic', 'speech']
+        'ai': ['artificial intelligence', 'machine learning', 'deep learning', 'neural networks', 'ml', 'intelligent systems'],
+        'artificial intelligence': ['ai', 'machine learning', 'deep learning', 'neural networks', 'intelligent systems'],
+        'machine learning': ['ml', 'ai', 'artificial intelligence', 'deep learning', 'neural networks', 'supervised learning', 'unsupervised learning'],
+        'deep learning': ['neural network', 'cnn', 'rnn', 'transformer', 'bert', 'deep neural networks'],
+        'computer vision': ['cv', 'image', 'visual', 'optical', 'camera', 'image processing'],
+        'natural language': ['nlp', 'text', 'language', 'linguistic', 'speech', 'text processing'],
+        'infosec': ['information security', 'cybersecurity', 'security', 'cyber security', 'information assurance'],
+        'cybersecurity': ['cyber security', 'information security', 'infosec', 'security', 'network security'],
+        'healthcare': ['health care', 'medical', 'medicine', 'clinical', 'healthcare systems', 'medical informatics'],
+        'medical': ['healthcare', 'medicine', 'clinical', 'medical informatics', 'health informatics', 'biomedical'],
+        'finance': ['financial', 'banking', 'fintech', 'financial services', 'economic', 'trading'],
+        'education': ['educational', 'learning', 'pedagogy', 'educational technology', 'e-learning'],
+        'climate': ['climate change', 'global warming', 'environmental', 'sustainability', 'climate science']
     }
     
     for topic_word in topic_words:
@@ -404,32 +413,99 @@ def search_papers_robust(topic, max_results=10):
         try:
             logger.info("Strategy 4: Related terms search")
             related_terms = {
-                'climate': ['climate change', 'global warming', 'environmental', 'sustainability'],
-                'ai': ['artificial intelligence', 'machine learning', 'deep learning', 'neural networks'],
-                'machine learning': ['ml', 'ai', 'artificial intelligence', 'deep learning'],
-                'deep learning': ['neural networks', 'ai', 'machine learning', 'cnn', 'rnn'],
-                'computer vision': ['cv', 'image processing', 'visual recognition'],
-                'natural language': ['nlp', 'text processing', 'language models']
+                'ai': ['artificial intelligence', 'machine learning', 'deep learning', 'neural networks', 'ml', 'ai systems', 'intelligent systems'],
+                'artificial intelligence': ['ai', 'machine learning', 'deep learning', 'neural networks', 'intelligent systems'],
+                'machine learning': ['ml', 'ai', 'artificial intelligence', 'deep learning', 'neural networks', 'supervised learning', 'unsupervised learning'],
+                'deep learning': ['neural networks', 'ai', 'machine learning', 'cnn', 'rnn', 'transformer', 'deep neural networks'],
+                'infosec': ['information security', 'cybersecurity', 'security', 'cyber security', 'information assurance', 'network security'],
+                'cybersecurity': ['cyber security', 'information security', 'infosec', 'security', 'network security', 'cyber threats'],
+                'healthcare': ['health care', 'medical', 'medicine', 'clinical', 'healthcare systems', 'medical informatics', 'health informatics'],
+                'medical': ['healthcare', 'medicine', 'clinical', 'medical informatics', 'health informatics', 'biomedical'],
+                'computer vision': ['cv', 'image processing', 'visual recognition', 'computer vision systems', 'image analysis'],
+                'natural language': ['nlp', 'text processing', 'language models', 'natural language processing', 'text mining'],
+                'climate': ['climate change', 'global warming', 'environmental', 'sustainability', 'climate science'],
+                'finance': ['financial', 'banking', 'fintech', 'financial services', 'economic', 'trading'],
+                'education': ['educational', 'learning', 'pedagogy', 'educational technology', 'e-learning'],
+                'transportation': ['transport', 'mobility', 'autonomous vehicles', 'traffic', 'logistics'],
+                'energy': ['renewable energy', 'solar', 'wind', 'power systems', 'energy efficiency'],
+                'agriculture': ['farming', 'agricultural', 'crop', 'precision agriculture', 'agtech'],
+                'manufacturing': ['industrial', 'production', 'automation', 'industry 4.0', 'smart manufacturing'],
+                'retail': ['e-commerce', 'shopping', 'commerce', 'retail technology', 'online retail'],
+                'entertainment': ['gaming', 'media', 'entertainment technology', 'digital media', 'content'],
+                'sports': ['athletics', 'fitness', 'sports technology', 'performance analysis', 'sports science']
             }
             
+            # Try related terms for each word in the topic
             for word in topic.split():
-                if word.lower() in related_terms:
-                    for related_term in related_terms[word.lower()][:2]:  # Try top 2 related terms
-                        related_papers = search_papers_fast(related_term, max_results // 3)
+                word_lower = word.lower()
+                if word_lower in related_terms:
+                    for related_term in related_terms[word_lower][:3]:  # Try top 3 related terms
+                        related_papers = search_papers_fast(related_term, max_results // 4)
                         all_papers.extend(related_papers)
                         logger.info(f"Related term '{related_term}' search returned {len(related_papers)} papers")
+            
+            # Also try combinations of related terms
+            topic_words = topic.lower().split()
+            if len(topic_words) >= 2:
+                for i, word1 in enumerate(topic_words):
+                    for j, word2 in enumerate(topic_words[i+1:], i+1):
+                        if word1 in related_terms and word2 in related_terms:
+                            for term1 in related_terms[word1][:2]:
+                                for term2 in related_terms[word2][:2]:
+                                    combo_term = f"{term1} {term2}"
+                                    combo_papers = search_papers_fast(combo_term, max_results // 6)
+                                    all_papers.extend(combo_papers)
+                                    logger.info(f"Combo term '{combo_term}' search returned {len(combo_papers)} papers")
         except Exception as e:
             logger.warning(f"Related terms search failed: {e}")
     
-    # Strategy 5: Try one more time with exact topic match
+    # Strategy 5: Try flexible combinations and variations
     if len(all_papers) < 3:
-        logger.info("Strategy 5: Final attempt with exact topic match")
+        logger.info("Strategy 5: Flexible combinations and variations")
         try:
-            exact_papers = search_papers_fast(topic, 6)
-            all_papers.extend(exact_papers)
-            logger.info(f"Exact topic search returned {len(exact_papers)} papers")
+            # Try different word orders and combinations
+            topic_words = topic.lower().split()
+            if len(topic_words) >= 2:
+                # Try different word orders
+                variations = [
+                    topic,  # Original
+                    ' '.join(reversed(topic_words)),  # Reversed order
+                    f"{topic_words[0]} and {topic_words[1]}",  # With "and"
+                    f"{topic_words[0]} for {topic_words[1]}",  # With "for"
+                    f"{topic_words[0]} in {topic_words[1]}",  # With "in"
+                    f"{topic_words[0]} with {topic_words[1]}",  # With "with"
+                    f"{topic_words[0]} using {topic_words[1]}",  # With "using"
+                    f"{topic_words[0]} based {topic_words[1]}",  # With "based"
+                    f"{topic_words[0]} applications {topic_words[1]}",  # With "applications"
+                    f"{topic_words[0]} systems {topic_words[1]}",  # With "systems"
+                ]
+                
+                for variation in variations[:5]:  # Try top 5 variations
+                    var_papers = search_papers_fast(variation, max_results // 5)
+                    all_papers.extend(var_papers)
+                    logger.info(f"Variation '{variation}' search returned {len(var_papers)} papers")
+            
+            # Try individual words with broader search
+            for word in topic_words:
+                if len(word) > 2:
+                    word_papers = search_papers_fast(word, max_results // 3)
+                    all_papers.extend(word_papers)
+                    logger.info(f"Individual word '{word}' search returned {len(word_papers)} papers")
         except Exception as e:
-            logger.warning(f"Exact topic search failed: {e}")
+            logger.warning(f"Flexible combinations search failed: {e}")
+    
+    # Strategy 6: Final fallback - try very broad terms
+    if len(all_papers) < 3:
+        logger.info("Strategy 6: Final fallback with broad terms")
+        try:
+            # Try very broad terms that are likely to return results
+            broad_terms = ['artificial intelligence', 'machine learning', 'deep learning', 'neural networks']
+            for term in broad_terms[:2]:  # Try top 2 broad terms
+                broad_papers = search_papers_fast(term, max_results // 4)
+                all_papers.extend(broad_papers)
+                logger.info(f"Broad term '{term}' search returned {len(broad_papers)} papers")
+        except Exception as e:
+            logger.warning(f"Broad terms search failed: {e}")
     
     return all_papers
 
@@ -702,15 +778,15 @@ def search_papers():
                             papers = []
                             logger.info("No papers found by exact author match")
                     else:
-                        # For non-author searches, use normal filtering
-                        relevant_papers = [p for p in unique_papers if p.get('relevance_score', 0) >= 5]  # Lower threshold
+                        # For non-author searches, use very low threshold to ensure results
+                        relevant_papers = [p for p in unique_papers if p.get('relevance_score', 0) >= 1]  # Very low threshold
                         
                         if relevant_papers:
-                            papers = relevant_papers[:8]  # Return top 8 most relevant papers
+                            papers = relevant_papers[:10]  # Return top 10 most relevant papers
                             logger.info(f"Found {len(papers)} relevant papers from APIs")
                         else:
                             # If no relevant papers, return top papers even with lower scores
-                            papers = unique_papers[:5]
+                            papers = unique_papers[:8]
                             logger.info(f"Found {len(papers)} papers (some with lower relevance scores)")
                     
                     # Cache the results
