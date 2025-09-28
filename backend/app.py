@@ -1,6 +1,5 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from scholarly import scholarly
 from google import genai
 import time
 import random
@@ -9,7 +8,6 @@ import logging
 import re
 import math
 from collections import Counter
-from scholarly._navigator import MaxTriesExceededException
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -28,9 +26,8 @@ try:
 except Exception as e:
     logger.error(f"Failed to initialize Gemini client: {e}")
 
-# Initialize scholarly with default settings
-scholarly.set_timeout(10)  # Faster timeout for quick fallback
-logger.info("Scholarly library initialized with 30s timeout")
+# Initialize API settings
+logger.info("API-based search system initialized")
 
 # Advanced relevance scoring system
 def advanced_relevance_scoring(paper, original_topic, query_variations=None):
@@ -284,46 +281,32 @@ def expand_search_query(topic):
     
     return expanded_queries[:5]  # Limit to 5 variations
 
-def search_papers_with_retry(topic, max_retries=1, timeout=10):
+def search_papers_fast(topic, max_results=10):
     """
-    Search for papers with retry mechanism and error handling
+    Fast paper search using multiple APIs with improved error handling
     """
-    logger.info(f"Starting paper search for topic: '{topic}' with {max_retries} retries")
+    logger.info(f"Starting fast paper search for topic: '{topic}'")
     
-    for attempt in range(max_retries):
-        try:
-            logger.info(f"Attempt {attempt + 1}/{max_retries}")
-            
-            # Add random delay to avoid rate limiting
-            if attempt > 0:
-                delay = random.uniform(2, 5)
-                logger.info(f"Waiting {delay:.1f}s before retry...")
-                time.sleep(delay)
-            
-            # Configure scholarly with timeout
-            scholarly.set_timeout(timeout)
-            logger.info(f"Set scholarly timeout to {timeout}s")
-            
-            # Search for publications
-            logger.info("Calling scholarly.search_pubs()...")
-            search_results = scholarly.search_pubs(topic)
-            logger.info("Successfully got search results from scholarly")
-            return search_results
-            
-        except MaxTriesExceededException as e:
-            logger.warning(f"MaxTriesExceededException on attempt {attempt + 1}: {e}")
-            if attempt == max_retries - 1:
-                error_msg = "Unable to connect to Google Scholar after multiple attempts. This might be due to rate limiting, network issues, or proxy requirements."
-                logger.error(error_msg)
-                raise Exception(error_msg)
-        except Exception as e:
-            logger.error(f"Unexpected error on attempt {attempt + 1}: {e}")
-            if attempt == max_retries - 1:
-                error_msg = f"An unexpected error occurred: {str(e)}"
-                logger.error(error_msg)
-                raise Exception(error_msg)
+    all_papers = []
     
-    return None
+    try:
+        # Search arXiv API
+        logger.info("Searching arXiv API...")
+        arxiv_papers = search_arxiv_api(topic, max_results // 2)
+        all_papers.extend(arxiv_papers)
+        logger.info(f"arXiv returned {len(arxiv_papers)} papers")
+        
+        # Search Semantic Scholar API
+        logger.info("Searching Semantic Scholar API...")
+        semantic_papers = search_semantic_scholar_api(topic, max_results // 2)
+        all_papers.extend(semantic_papers)
+        logger.info(f"Semantic Scholar returned {len(semantic_papers)} papers")
+        
+        return all_papers
+        
+    except Exception as e:
+        logger.error(f"Fast search failed: {e}")
+        return []
 
 def search_arxiv_api(topic, max_results=5):
     """
@@ -337,7 +320,7 @@ def search_arxiv_api(topic, max_results=5):
         search_query = f"all:{topic}"
         url = f"https://export.arxiv.org/api/query?search_query={search_query}&start=0&max_results={max_results}&sortBy=relevance&sortOrder=descending"
         logger.info(f"Searching arXiv with URL: {url}")
-        response = requests.get(url, timeout=15)
+        response = requests.get(url, timeout=8)
         
         if response.status_code == 200:
             root = ET.fromstring(response.content)
@@ -387,7 +370,7 @@ def search_semantic_scholar_api(topic, max_results=5):
         # Use more specific search parameters for better results
         url = f"https://api.semanticscholar.org/graph/v1/paper/search?query={topic}&limit={max_results}&fields=title,authors,abstract,url,year,citationCount,isOpenAccess&sort=relevance"
         logger.info(f"Searching Semantic Scholar with URL: {url}")
-        response = requests.get(url, timeout=15)
+        response = requests.get(url, timeout=8)
         
         if response.status_code == 200:
             data = response.json()
@@ -586,8 +569,8 @@ def search_papers():
             logger.error("No topic provided")
             return jsonify({'error': 'Topic is required'}), 400
         
-        # REAL-TIME SEARCH using multiple APIs
-        logger.info(f"Starting real-time paper search for: {topic}")
+        # FAST API-BASED SEARCH
+        logger.info(f"Starting fast paper search for: {topic}")
         
         # Check if this is a WiFi CSI related query first
         is_wifi_csi_query = any(keyword in topic.lower() for keyword in [
@@ -599,7 +582,7 @@ def search_papers():
             logger.info("Detected WiFi CSI query - using specialized papers")
             papers = get_fallback_papers(topic)  # This will return WiFi CSI papers
         else:
-            # Try real API searches for non-WiFi queries with improved relevance
+            # Use fast API search for all queries
             papers = []
             try:
                 # Expand search queries for better coverage
@@ -608,14 +591,13 @@ def search_papers():
                 
                 all_papers = []
                 
-                # Search with each query variation
-                for query in search_queries[:3]:  # Limit to 3 queries to avoid rate limiting
+                # Use fast search for each query variation
+                for query in search_queries[:2]:  # Limit to 2 queries for speed
                     try:
-                        logger.info(f"Searching with query: {query}")
-                        arxiv_papers = search_arxiv_api(query, 4)
-                        semantic_papers = search_semantic_scholar_api(query, 4)
-                        all_papers.extend(arxiv_papers + semantic_papers)
-                        time.sleep(0.5)  # Small delay between queries
+                        logger.info(f"Fast searching with query: {query}")
+                        query_papers = search_papers_fast(query, 6)
+                        all_papers.extend(query_papers)
+                        time.sleep(0.3)  # Minimal delay between queries
                     except Exception as e:
                         logger.warning(f"Query '{query}' failed: {e}")
                         continue
@@ -652,7 +634,7 @@ def search_papers():
                             logger.info("No papers found by exact author match")
                     else:
                         # For non-author searches, use normal filtering
-                        relevant_papers = [p for p in unique_papers if p.get('relevance_score', 0) >= 20]
+                        relevant_papers = [p for p in unique_papers if p.get('relevance_score', 0) >= 15]
                         
                         if relevant_papers:
                             papers = relevant_papers[:8]  # Return top 8 most relevant papers
@@ -666,7 +648,7 @@ def search_papers():
                     papers = get_fallback_papers(topic)
                     
             except Exception as e:
-                logger.error(f"API search failed: {e}")
+                logger.error(f"Fast API search failed: {e}")
                 logger.info("Using fallback papers due to API error")
                 papers = get_fallback_papers(topic)
         
@@ -708,32 +690,7 @@ def search_papers():
                 'fallback': True
             })
         
-        logger.info("Processing search results...")
-        papers = []
-        try:
-            for i in range(5):  # Top 5 papers
-                try:
-                    logger.info(f"Processing paper {i + 1}/5")
-                    paper = next(search_results)
-                    logger.info(f"Paper {i + 1} data: {paper}")
-                    
-                    paper_data = {
-                        "title": paper.get("bib", {}).get("title", "No title"),
-                        "abstract": paper.get("bib", {}).get("abstract", "No abstract available."),
-                        "authors": paper.get("bib", {}).get("author", "Unknown"),
-                        "url": paper.get("pub_url", "#")
-                    }
-                    papers.append(paper_data)
-                    logger.info(f"Added paper {i + 1}: {paper_data['title']}")
-                except StopIteration:
-                    logger.info(f"StopIteration at paper {i + 1}")
-                    break
-        except Exception as e:
-            logger.error(f"Error processing search results: {e}")
-            return jsonify({'error': f'Error processing search results: {str(e)}'}), 500
-        
-        logger.info(f"Successfully processed {len(papers)} papers")
-        return jsonify({'papers': papers})
+        # This code block is no longer needed as we use fast API search above
         
     except Exception as e:
         logger.error(f"Search papers API error: {e}")
