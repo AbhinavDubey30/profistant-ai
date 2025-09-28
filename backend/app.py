@@ -8,6 +8,9 @@ import logging
 import re
 import math
 from collections import Counter
+from datetime import datetime, timedelta
+import pytz
+from scholarly import scholarly
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -22,9 +25,11 @@ logger.info(f"Gemini API Key configured: {api_key[:10]}...")
 
 try:
     client = genai.Client(api_key=api_key)
+    model = client.models.get_model("gemini-2.5-flash")
     logger.info("Gemini client initialized successfully")
 except Exception as e:
     logger.error(f"Failed to initialize Gemini client: {e}")
+    model = None
 
 # Initialize API settings
 logger.info("API-based search system initialized")
@@ -262,6 +267,9 @@ def expand_search_query(topic):
     # Check if this is an author search
     is_author_search = any(pattern in base_query for pattern in ['author:', 'by ', 'written by', 'papers by'])
     
+    # Check if this looks like a journal name (contains common journal words)
+    is_journal_search = any(word in base_query for word in ['journal', 'computation', 'neural', 'intelligence', 'learning', 'vision', 'language', 'processing'])
+    
     if is_author_search:
         # For author searches, don't expand much to avoid confusion
         # Just add variations with "author:" prefix
@@ -269,10 +277,19 @@ def expand_search_query(topic):
         if author_name:
             expanded_queries.extend([
                 f"author:{author_name}",
-                f"by {author_name}",
-                f"papers by {author_name}"
+                f'"{author_name}"',
+                f"{author_name}"
             ])
         return expanded_queries[:3]  # Limit author searches to 3 variations
+    
+    if is_journal_search:
+        # For journal searches, add variations
+        expanded_queries.extend([
+            f'"{topic}"',
+            f"journal {topic}",
+            topic.replace(' ', ' AND ')
+        ])
+        return expanded_queries[:4]
     
     # Define query expansion rules for non-author searches
     expansions = {
@@ -367,145 +384,145 @@ def search_papers_fast(topic, max_results=10):
     logger.info(f"Total unique papers found: {len(unique_papers)}")
     return unique_papers
 
+def search_scholar_api(topic, max_results=5):
+    """
+    Search Google Scholar using the scholarly library (like Profistant_like)
+    """
+    try:
+        logger.info(f"Searching Google Scholar for: '{topic}'")
+        
+        # Use scholarly to search for papers
+        search_query = scholarly.search_pubs(topic)
+        papers = []
+        
+        for i in range(max_results):
+            try:
+                paper = next(search_query)
+                
+                # Extract paper information
+                title = paper.get("bib", {}).get("title", "No title")
+                abstract = paper.get("bib", {}).get("abstract", "No abstract available")
+                authors = paper.get("bib", {}).get("author", "Unknown")
+                url = paper.get("pub_url", "#")
+                
+                # Try to get publication year
+                year = "Unknown"
+                if "pub_year" in paper.get("bib", {}):
+                    year = str(paper["bib"]["pub_year"])
+                elif "pubdate" in paper.get("bib", {}):
+                    year = str(paper["bib"]["pubdate"])
+                
+                papers.append({
+                    "title": title,
+                    "authors": authors,
+                    "abstract": abstract,
+                    "url": url,
+                    "year": year,
+                    "source": "Google Scholar"
+                })
+                
+                logger.info(f"Found paper: {title[:50]}...")
+                
+            except StopIteration:
+                break
+            except Exception as e:
+                logger.warning(f"Error processing paper {i+1}: {e}")
+                continue
+        
+        logger.info(f"Scholarly search returned {len(papers)} papers")
+        return papers
+        
+    except Exception as e:
+        logger.error(f"Scholarly search error: {e}")
+        return []
+
 def search_papers_robust(topic, max_results=10):
     """
     Robust paper search with multiple fallback strategies
     """
-    logger.info(f"Starting robust paper search for topic: '{topic}'")
+    logger.info(f"Starting enhanced robust paper search for topic: '{topic}'")
     
     all_papers = []
     
-    # Strategy 1: Try fast API search
+    # Strategy 1: Try Google Scholar first (most effective for author names and specific searches)
     try:
-        logger.info("Strategy 1: Fast API search")
-        api_papers = search_papers_fast(topic, max_results)
-        all_papers.extend(api_papers)
-        logger.info(f"Fast API search returned {len(api_papers)} papers")
+        logger.info("Strategy 1: Google Scholar search (most effective)")
+        scholar_papers = search_scholar_api(topic, max_results // 2)
+        all_papers.extend(scholar_papers)
+        logger.info(f"Google Scholar search returned {len(scholar_papers)} papers")
     except Exception as e:
-        logger.warning(f"Fast API search failed: {e}")
+        logger.warning(f"Google Scholar search failed: {e}")
     
-    # Strategy 2: Try with simplified query if no results
+    # Strategy 2: Try arXiv and Semantic Scholar APIs
+    try:
+        logger.info("Strategy 2: arXiv and Semantic Scholar search")
+        api_papers = search_papers_fast(topic, max_results // 2)
+        all_papers.extend(api_papers)
+        logger.info(f"API search returned {len(api_papers)} papers")
+    except Exception as e:
+        logger.warning(f"API search failed: {e}")
+    
+    # Strategy 3: Try scholarly with variations if no results
     if len(all_papers) < 3:
         try:
-            logger.info("Strategy 2: Simplified query search")
-            # Simplify the query by taking first few words
-            simple_query = ' '.join(topic.split()[:3])
-            simple_papers = search_papers_fast(simple_query, max_results)
-            all_papers.extend(simple_papers)
-            logger.info(f"Simplified query search returned {len(simple_papers)} papers")
+            logger.info("Strategy 3: Scholarly search with variations")
+            variations = expand_search_query(topic)
+            for variation in variations[:3]:  # Try top 3 variations
+                var_papers = search_scholar_api(variation, max_results // 4)
+                all_papers.extend(var_papers)
+                logger.info(f"Scholarly variation '{variation}' returned {len(var_papers)} papers")
         except Exception as e:
-            logger.warning(f"Simplified query search failed: {e}")
+            logger.warning(f"Scholarly variations search failed: {e}")
     
-    # Strategy 3: Try with individual keywords if still no results
+    # Strategy 4: Try simplified scholarly search
     if len(all_papers) < 3:
         try:
-            logger.info("Strategy 3: Keyword-based search")
-            keywords = [word for word in topic.split() if len(word) > 2]  # Include shorter words
+            logger.info("Strategy 4: Simplified scholarly search")
+            # Simplify the query by taking key words
+            words = topic.split()
+            if len(words) > 3:
+                simple_query = ' '.join(words[:3])  # Take first 3 words
+                simple_papers = search_scholar_api(simple_query, max_results // 2)
+                all_papers.extend(simple_papers)
+                logger.info(f"Simplified scholarly search returned {len(simple_papers)} papers")
+        except Exception as e:
+            logger.warning(f"Simplified scholarly search failed: {e}")
+    
+    # Strategy 5: Try individual keywords with scholarly
+    if len(all_papers) < 3:
+        try:
+            logger.info("Strategy 5: Individual keyword scholarly search")
+            keywords = [word for word in topic.split() if len(word) > 2]
             for keyword in keywords[:3]:  # Try top 3 keywords
-                keyword_papers = search_papers_fast(keyword, max_results // 2)
+                keyword_papers = search_scholar_api(keyword, max_results // 4)
                 all_papers.extend(keyword_papers)
-                logger.info(f"Keyword '{keyword}' search returned {len(keyword_papers)} papers")
+                logger.info(f"Scholarly keyword '{keyword}' search returned {len(keyword_papers)} papers")
         except Exception as e:
-            logger.warning(f"Keyword search failed: {e}")
+            logger.warning(f"Individual keyword scholarly search failed: {e}")
     
-    # Strategy 4: Try with related terms if still no results
+    # Strategy 6: Try related terms with scholarly
     if len(all_papers) < 3:
         try:
-            logger.info("Strategy 4: Related terms search")
+            logger.info("Strategy 6: Related terms scholarly search")
             related_terms = {
-                'ai': ['artificial intelligence', 'machine learning', 'deep learning', 'neural networks', 'ml', 'ai systems', 'intelligent systems'],
-                'artificial intelligence': ['ai', 'machine learning', 'deep learning', 'neural networks', 'intelligent systems'],
-                'machine learning': ['ml', 'ai', 'artificial intelligence', 'deep learning', 'neural networks', 'supervised learning', 'unsupervised learning'],
-                'deep learning': ['neural networks', 'ai', 'machine learning', 'cnn', 'rnn', 'transformer', 'deep neural networks'],
-                'infosec': ['information security', 'cybersecurity', 'security', 'cyber security', 'information assurance', 'network security'],
-                'cybersecurity': ['cyber security', 'information security', 'infosec', 'security', 'network security', 'cyber threats'],
-                'healthcare': ['health care', 'medical', 'medicine', 'clinical', 'healthcare systems', 'medical informatics', 'health informatics'],
-                'medical': ['healthcare', 'medicine', 'clinical', 'medical informatics', 'health informatics', 'biomedical'],
-                'computer vision': ['cv', 'image processing', 'visual recognition', 'computer vision systems', 'image analysis'],
-                'natural language': ['nlp', 'text processing', 'language models', 'natural language processing', 'text mining'],
-                'climate': ['climate change', 'global warming', 'environmental', 'sustainability', 'climate science'],
-                'finance': ['financial', 'banking', 'fintech', 'financial services', 'economic', 'trading'],
-                'education': ['educational', 'learning', 'pedagogy', 'educational technology', 'e-learning'],
-                'transportation': ['transport', 'mobility', 'autonomous vehicles', 'traffic', 'logistics'],
-                'energy': ['renewable energy', 'solar', 'wind', 'power systems', 'energy efficiency'],
-                'agriculture': ['farming', 'agricultural', 'crop', 'precision agriculture', 'agtech'],
-                'manufacturing': ['industrial', 'production', 'automation', 'industry 4.0', 'smart manufacturing'],
-                'retail': ['e-commerce', 'shopping', 'commerce', 'retail technology', 'online retail'],
-                'entertainment': ['gaming', 'media', 'entertainment technology', 'digital media', 'content'],
-                'sports': ['athletics', 'fitness', 'sports technology', 'performance analysis', 'sports science']
+                'neural computation': ['neural networks', 'deep learning', 'machine learning'],
+                'machine learning': ['ml', 'artificial intelligence', 'deep learning'],
+                'deep learning': ['neural networks', 'ai', 'machine learning'],
+                'computer vision': ['cv', 'image processing', 'visual recognition'],
+                'natural language': ['nlp', 'text processing', 'language models'],
+                'ai': ['artificial intelligence', 'machine learning', 'deep learning'],
+                'artificial intelligence': ['ai', 'machine learning', 'deep learning']
             }
             
-            # Try related terms for each word in the topic
-            for word in topic.split():
-                word_lower = word.lower()
-                if word_lower in related_terms:
-                    for related_term in related_terms[word_lower][:3]:  # Try top 3 related terms
-                        related_papers = search_papers_fast(related_term, max_results // 4)
+            topic_lower = topic.lower()
+            for term, related_list in related_terms.items():
+                if term in topic_lower:
+                    for related_term in related_list[:2]:  # Try top 2 related terms
+                        related_papers = search_scholar_api(related_term, max_results // 6)
                         all_papers.extend(related_papers)
-                        logger.info(f"Related term '{related_term}' search returned {len(related_papers)} papers")
-            
-            # Also try combinations of related terms
-            topic_words = topic.lower().split()
-            if len(topic_words) >= 2:
-                for i, word1 in enumerate(topic_words):
-                    for j, word2 in enumerate(topic_words[i+1:], i+1):
-                        if word1 in related_terms and word2 in related_terms:
-                            for term1 in related_terms[word1][:2]:
-                                for term2 in related_terms[word2][:2]:
-                                    combo_term = f"{term1} {term2}"
-                                    combo_papers = search_papers_fast(combo_term, max_results // 6)
-                                    all_papers.extend(combo_papers)
-                                    logger.info(f"Combo term '{combo_term}' search returned {len(combo_papers)} papers")
+                        logger.info(f"Scholarly related term '{related_term}' returned {len(related_papers)} papers")
         except Exception as e:
-            logger.warning(f"Related terms search failed: {e}")
-    
-    # Strategy 5: Try flexible combinations and variations
-    if len(all_papers) < 3:
-        logger.info("Strategy 5: Flexible combinations and variations")
-        try:
-            # Try different word orders and combinations
-            topic_words = topic.lower().split()
-            if len(topic_words) >= 2:
-                # Try different word orders
-                variations = [
-                    topic,  # Original
-                    ' '.join(reversed(topic_words)),  # Reversed order
-                    f"{topic_words[0]} and {topic_words[1]}",  # With "and"
-                    f"{topic_words[0]} for {topic_words[1]}",  # With "for"
-                    f"{topic_words[0]} in {topic_words[1]}",  # With "in"
-                    f"{topic_words[0]} with {topic_words[1]}",  # With "with"
-                    f"{topic_words[0]} using {topic_words[1]}",  # With "using"
-                    f"{topic_words[0]} based {topic_words[1]}",  # With "based"
-                    f"{topic_words[0]} applications {topic_words[1]}",  # With "applications"
-                    f"{topic_words[0]} systems {topic_words[1]}",  # With "systems"
-                ]
-                
-                for variation in variations[:5]:  # Try top 5 variations
-                    var_papers = search_papers_fast(variation, max_results // 5)
-                    all_papers.extend(var_papers)
-                    logger.info(f"Variation '{variation}' search returned {len(var_papers)} papers")
-            
-            # Try individual words with broader search
-            for word in topic_words:
-                if len(word) > 2:
-                    word_papers = search_papers_fast(word, max_results // 3)
-                    all_papers.extend(word_papers)
-                    logger.info(f"Individual word '{word}' search returned {len(word_papers)} papers")
-        except Exception as e:
-            logger.warning(f"Flexible combinations search failed: {e}")
-    
-    # Strategy 6: Final fallback - try very broad terms
-    if len(all_papers) < 3:
-        logger.info("Strategy 6: Final fallback with broad terms")
-        try:
-            # Try very broad terms that are likely to return results
-            broad_terms = ['artificial intelligence', 'machine learning', 'deep learning', 'neural networks']
-            for term in broad_terms[:2]:  # Try top 2 broad terms
-                broad_papers = search_papers_fast(term, max_results // 4)
-                all_papers.extend(broad_papers)
-                logger.info(f"Broad term '{term}' search returned {len(broad_papers)} papers")
-        except Exception as e:
-            logger.warning(f"Broad terms search failed: {e}")
+            logger.warning(f"Related terms scholarly search failed: {e}")
     
     return all_papers
 
@@ -977,6 +994,283 @@ def save_to_reading_list():
         return jsonify({'message': 'Paper saved successfully'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/calendar-export', methods=['POST'])
+def generate_calendar():
+    """
+    Generate calendar (.ics) file for research schedule
+    """
+    try:
+        data = request.get_json()
+        reading_list = data.get('readingList', [])
+        total_weeks = data.get('totalWeeks', 4)
+        selected_days = data.get('selectedDays', ['Monday', 'Wednesday', 'Friday'])
+        time_range = data.get('timeRange', [17, 19])
+        
+        if not reading_list:
+            return jsonify({'error': 'No papers in reading list'}), 400
+        
+        # Generate calendar content
+        calendar_content = generate_ics_calendar(reading_list, total_weeks, selected_days, time_range)
+        
+        return jsonify({
+            'calendar_content': calendar_content,
+            'filename': 'profsistant_schedule.ics'
+        })
+        
+    except Exception as e:
+        logger.error(f"Calendar generation error: {e}")
+        return jsonify({'error': f'Failed to generate calendar: {str(e)}'}), 500
+
+@app.route('/api/research-plan', methods=['POST'])
+def generate_research_plan():
+    """
+    Generate AI-powered research plan using Gemini
+    """
+    try:
+        data = request.get_json()
+        reading_list = data.get('readingList', [])
+        total_weeks = data.get('totalWeeks', 4)
+        selected_days = data.get('selectedDays', ['Monday', 'Wednesday', 'Friday'])
+        time_range = data.get('timeRange', [17, 19])
+        
+        if not reading_list:
+            return jsonify({'error': 'No papers in reading list'}), 400
+        
+        # Generate AI-powered research plan
+        try:
+            titles = [paper['title'] for paper in reading_list]
+            start_hour, end_hour = time_range
+            
+            prompt = f"""
+            Help a student plan reading and analysis for these papers:
+
+            {titles}
+
+            They are available on {', '.join(selected_days)} between {start_hour}:00 and {end_hour}:00, and they want to finish in {total_weeks} weeks.
+
+            Suggest a weekly schedule with tasks like "Read Paper", "Take Notes", "Brainstorm Ideas". Present clearly by weeks and days.
+            """
+            
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt
+            )
+            
+            return jsonify({
+                'plan': response.text,
+                'message': 'Research plan generated successfully'
+            })
+            
+        except Exception as e:
+            logger.error(f"Gemini API error for research plan: {e}")
+            # Fallback plan
+            fallback_plan = generate_fallback_plan(reading_list, total_weeks, selected_days, time_range)
+            return jsonify({
+                'plan': fallback_plan,
+                'message': 'Research plan generated (fallback mode)'
+            })
+        
+    except Exception as e:
+        logger.error(f"Research plan generation error: {e}")
+        return jsonify({'error': f'Failed to generate research plan: {str(e)}'}), 500
+
+@app.route('/api/research-ideas', methods=['POST'])
+def generate_research_ideas():
+    """
+    Generate AI-powered research ideas and gaps using Gemini
+    """
+    try:
+        data = request.get_json()
+        reading_list = data.get('readingList', [])
+        
+        if not reading_list:
+            return jsonify({'error': 'No papers in reading list'}), 400
+        
+        # Generate research ideas using Gemini
+        try:
+            paper_chunks = "\n\n".join(
+                [f"Title: {paper['title']}\nAbstract: {paper.get('abstract', 'No abstract available')}" for paper in reading_list]
+            )
+            
+            prompt = f"""
+            You are assisting a graduate student planning research.
+
+            They are studying the following papers:
+
+            {paper_chunks}
+
+            Based on this reading list, identify:
+
+            1. Research gaps or limitations across the papers
+            2. Interesting follow-up research questions
+            3. Small project ideas that could be pursued
+
+            Respond clearly in bullets or a numbered list.
+            """
+            
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt
+            )
+            
+            return jsonify({
+                'ideas': response.text,
+                'message': 'Research ideas generated successfully'
+            })
+            
+        except Exception as e:
+            logger.error(f"Gemini API error for research ideas: {e}")
+            # Fallback ideas
+            fallback_ideas = generate_fallback_ideas(reading_list)
+            return jsonify({
+                'ideas': fallback_ideas,
+                'message': 'Research ideas generated (fallback mode)'
+            })
+        
+    except Exception as e:
+        logger.error(f"Research ideas generation error: {e}")
+        return jsonify({'error': f'Failed to generate research ideas: {str(e)}'}), 500
+
+def generate_ics_calendar(reading_list, total_weeks, selected_days, time_range):
+    """
+    Generate ICS calendar content for research schedule
+    """
+    calendar_lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//ProfistantAI//Research Planner//EN",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH"
+    ]
+    
+    days_map = {
+        "Monday": 0, "Tuesday": 1, "Wednesday": 2,
+        "Thursday": 3, "Friday": 4, "Saturday": 5, "Sunday": 6
+    }
+    selected_day_nums = [days_map[d] for d in selected_days]
+    
+    start_date = datetime.now()
+    current_date = start_date
+    task_types = ["Read", "Take Notes", "Brainstorm"]
+    total_tasks = len(reading_list) * len(task_types)
+    task_counter = 0
+    
+    for week in range(total_weeks):
+        for day in selected_day_nums:
+            while current_date.weekday() != day:
+                current_date += timedelta(days=1)
+            
+            for hour in range(time_range[0], time_range[1]):
+                if task_counter >= total_tasks:
+                    break
+                    
+                paper_idx = task_counter // len(task_types)
+                task_type = task_types[task_counter % len(task_types)]
+                
+                # Create event
+                event_start = current_date.replace(hour=hour, minute=0, second=0, microsecond=0)
+                event_end = event_start + timedelta(hours=1)
+                
+                # Format dates for ICS
+                start_str = event_start.strftime("%Y%m%dT%H%M%SZ")
+                end_str = event_end.strftime("%Y%m%dT%H%M%SZ")
+                
+                title = f"{task_type} Paper {paper_idx + 1}"
+                description = f"{task_type} session for '{reading_list[paper_idx]['title'][:40]}...'"
+                
+                calendar_lines.extend([
+                    "BEGIN:VEVENT",
+                    f"UID:{task_counter}@profsistant.ai",
+                    f"DTSTART:{start_str}",
+                    f"DTEND:{end_str}",
+                    f"SUMMARY:{title}",
+                    f"DESCRIPTION:{description}",
+                    "STATUS:CONFIRMED",
+                    "END:VEVENT"
+                ])
+                
+                task_counter += 1
+            
+            current_date += timedelta(days=1)
+            if task_counter >= total_tasks:
+                break
+    
+    calendar_lines.append("END:VCALENDAR")
+    return "\n".join(calendar_lines)
+
+def generate_fallback_plan(reading_list, total_weeks, selected_days, time_range):
+    """
+    Generate a fallback research plan when Gemini API is unavailable
+    """
+    plan = f"""# Research Plan ({total_weeks} weeks)
+    
+## Schedule Overview
+- **Available Days:** {', '.join(selected_days)}
+- **Time Slot:** {time_range[0]}:00 - {time_range[1]}:00
+- **Total Papers:** {len(reading_list)}
+
+## Weekly Breakdown
+
+"""
+    
+    papers_per_week = max(1, len(reading_list) // total_weeks)
+    tasks_per_week = papers_per_week * 3  # Read, Take Notes, Brainstorm
+    
+    for week in range(1, total_weeks + 1):
+        plan += f"### Week {week}\n"
+        plan += f"- **Papers to focus on:** {papers_per_week}\n"
+        plan += f"- **Tasks per day:** {tasks_per_week // len(selected_days) if len(selected_days) > 0 else 1}\n\n"
+        
+        for day in selected_days:
+            plan += f"**{day}:**\n"
+            plan += f"- Read 1-2 papers\n"
+            plan += f"- Take detailed notes\n"
+            plan += f"- Brainstorm connections\n\n"
+    
+    plan += """## Tips for Success
+- Start each session by reviewing previous notes
+- Focus on understanding key concepts before moving to next paper
+- Create mind maps for complex topics
+- Schedule regular review sessions
+"""
+    
+    return plan
+
+def generate_fallback_ideas(reading_list):
+    """
+    Generate fallback research ideas when Gemini API is unavailable
+    """
+    ideas = f"""# Research Gaps & Ideas Analysis
+
+Based on your reading list of {len(reading_list)} papers, here are potential research directions:
+
+## Research Gaps Identified
+- **Methodological Limitations:** Current approaches could be enhanced with additional validation methods
+- **Scope Expansion:** Future work could explore broader applications and use cases
+- **Performance Optimization:** Opportunities to improve efficiency and accuracy
+- **Cross-domain Applications:** Methodologies could be adapted for related fields
+
+## Follow-up Research Questions
+1. How can these methods be applied to real-world scenarios?
+2. What are the scalability limitations of current approaches?
+3. How do these techniques compare across different domains?
+4. What are the ethical implications of these technologies?
+
+## Small Project Ideas
+- **Literature Review:** Comprehensive survey of recent developments
+- **Comparative Study:** Benchmark different approaches on standard datasets
+- **Prototype Development:** Build a proof-of-concept implementation
+- **Case Study Analysis:** Apply methods to specific domain problems
+
+## Implementation Suggestions
+- Start with a focused literature review
+- Identify specific gaps in current research
+- Design small-scale experiments to validate ideas
+- Collaborate with domain experts for practical insights
+"""
+    
+    return ideas
 
 @app.route('/api/health', methods=['GET'])
 def health_check():

@@ -111,4 +111,52 @@ export const saveToReadingList = async (paper) => {
   }
 };
 
+export const generateCalendar = async (readingList, totalWeeks, selectedDays, timeRange) => {
+  try {
+    const response = await api.post('/api/calendar-export', {
+      readingList,
+      totalWeeks,
+      selectedDays,
+      timeRange
+    });
+    return response.data;
+  } catch (error) {
+    if (error.response?.data?.error) {
+      throw new Error(error.response.data.error);
+    }
+    throw new Error('Failed to generate calendar');
+  }
+};
+
+export const generateResearchPlan = async (readingList, totalWeeks, selectedDays, timeRange) => {
+  try {
+    const response = await api.post('/api/research-plan', {
+      readingList,
+      totalWeeks,
+      selectedDays,
+      timeRange
+    });
+    return response.data;
+  } catch (error) {
+    if (error.response?.data?.error) {
+      throw new Error(error.response.data.error);
+    }
+    throw new Error('Failed to generate research plan');
+  }
+};
+
+export const generateResearchIdeas = async (readingList) => {
+  try {
+    const response = await api.post('/api/research-ideas', {
+      readingList
+    });
+    return response.data;
+  } catch (error) {
+    if (error.response?.data?.error) {
+      throw new Error(error.response.data.error);
+    }
+    throw new Error('Failed to generate research ideas');
+  }
+};
+
 export default api;

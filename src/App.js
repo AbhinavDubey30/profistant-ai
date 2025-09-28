@@ -140,7 +140,7 @@ function App() {
                   toggleSidebar={toggleSidebar}
                 />
                 <div className={`main-content ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
-                  <Planner />
+                  <Planner readingList={readingList} />
                 </div>
               </div>
             } 
@@ -182,7 +182,7 @@ function App() {
                   toggleSidebar={toggleSidebar}
                 />
                 <div className={`main-content ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
-                  <ResearchIdeas />
+                  <ResearchIdeas readingList={readingList} />
                 </div>
               </div>
             } 
