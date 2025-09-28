@@ -25,7 +25,7 @@ logger.info(f"Gemini API Key configured: {api_key[:10]}...")
 
 try:
     client = genai.Client(api_key=api_key)
-    model = client.models.get_model("gemini-2.5-flash")
+    model = client.models.get_model("gemini-2.0-flash-exp")
     logger.info("Gemini client initialized successfully")
 except Exception as e:
     logger.error(f"Failed to initialize Gemini client: {e}")
@@ -53,11 +53,11 @@ def advanced_relevance_scoring(paper, original_topic, query_variations=None):
         query_variations = [original_topic]
     
     score = 0
-    title_lower = paper.get('title', '').lower()
-    abstract_lower = paper.get('abstract', '').lower()
+    title_lower = (paper.get('title') or '').lower()
+    abstract_lower = (paper.get('abstract') or '').lower()
     topic_lower = original_topic.lower()
     year = paper.get('year', 'Unknown')
-    authors = paper.get('authors', '')
+    authors = paper.get('authors') or ''
     
     # Check if this is an author search (contains common author name patterns)
     is_author_search = any(pattern in topic_lower for pattern in ['author:', 'by ', 'written by', 'papers by'])
@@ -334,7 +334,7 @@ def search_papers_fast(topic, max_results=10):
     logger.info(f"Starting fast paper search for topic: '{topic}'")
     
     all_papers = []
-    max_retries = 3
+    max_retries = 2  # Reduced retries for faster response
     
     # Search arXiv API with retry
     for attempt in range(max_retries):
@@ -348,11 +348,11 @@ def search_papers_fast(topic, max_results=10):
             else:
                 logger.warning(f"arXiv returned no papers on attempt {attempt + 1}")
                 if attempt < max_retries - 1:
-                    time.sleep(1)  # Wait before retry
+                    time.sleep(0.5)  # Reduced wait time
         except Exception as e:
             logger.error(f"arXiv search attempt {attempt + 1} failed: {e}")
             if attempt < max_retries - 1:
-                time.sleep(1)  # Wait before retry
+                time.sleep(0.5)  # Reduced wait time
     
     # Search Semantic Scholar API with retry
     for attempt in range(max_retries):
@@ -366,11 +366,11 @@ def search_papers_fast(topic, max_results=10):
             else:
                 logger.warning(f"Semantic Scholar returned no papers on attempt {attempt + 1}")
                 if attempt < max_retries - 1:
-                    time.sleep(1)  # Wait before retry
+                    time.sleep(0.5)  # Reduced wait time
         except Exception as e:
             logger.error(f"Semantic Scholar search attempt {attempt + 1} failed: {e}")
             if attempt < max_retries - 1:
-                time.sleep(1)  # Wait before retry
+                time.sleep(0.5)  # Reduced wait time
     
     # Deduplicate results
     seen_titles = set()
@@ -549,7 +549,7 @@ def search_arxiv_api(topic, max_results=5):
             try:
                 url = f"https://export.arxiv.org/api/query?search_query={search_query}&start=0&max_results={max_results}&sortBy=relevance&sortOrder=descending"
                 logger.info(f"Searching arXiv with URL: {url}")
-                response = requests.get(url, timeout=10)
+                response = requests.get(url, timeout=8)
             except Exception as e:
                 logger.error(f"arXiv request failed for query '{search_query}': {e}")
                 continue
@@ -625,7 +625,7 @@ def search_semantic_scholar_api(topic, max_results=5):
             try:
                 url = f"https://api.semanticscholar.org/graph/v1/paper/search?query={query}&limit={max_results}&fields=title,authors,abstract,url,year,citationCount,isOpenAccess&sort=relevance"
                 logger.info(f"Searching Semantic Scholar with URL: {url}")
-                response = requests.get(url, timeout=10)
+                response = requests.get(url, timeout=8)
             except Exception as e:
                 logger.error(f"Semantic Scholar request failed for query '{query}': {e}")
                 continue
