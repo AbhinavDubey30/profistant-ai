@@ -391,17 +391,39 @@ def search_papers_robust(topic, max_results=10):
     if len(all_papers) < 3:
         try:
             logger.info("Strategy 3: Keyword-based search")
-            keywords = [word for word in topic.split() if len(word) > 3]
-            for keyword in keywords[:2]:  # Try top 2 keywords
+            keywords = [word for word in topic.split() if len(word) > 2]  # Include shorter words
+            for keyword in keywords[:3]:  # Try top 3 keywords
                 keyword_papers = search_papers_fast(keyword, max_results // 2)
                 all_papers.extend(keyword_papers)
                 logger.info(f"Keyword '{keyword}' search returned {len(keyword_papers)} papers")
         except Exception as e:
             logger.warning(f"Keyword search failed: {e}")
     
-    # Strategy 4: Try one more time with exact topic match
+    # Strategy 4: Try with related terms if still no results
     if len(all_papers) < 3:
-        logger.info("Strategy 4: Final attempt with exact topic match")
+        try:
+            logger.info("Strategy 4: Related terms search")
+            related_terms = {
+                'climate': ['climate change', 'global warming', 'environmental', 'sustainability'],
+                'ai': ['artificial intelligence', 'machine learning', 'deep learning', 'neural networks'],
+                'machine learning': ['ml', 'ai', 'artificial intelligence', 'deep learning'],
+                'deep learning': ['neural networks', 'ai', 'machine learning', 'cnn', 'rnn'],
+                'computer vision': ['cv', 'image processing', 'visual recognition'],
+                'natural language': ['nlp', 'text processing', 'language models']
+            }
+            
+            for word in topic.split():
+                if word.lower() in related_terms:
+                    for related_term in related_terms[word.lower()][:2]:  # Try top 2 related terms
+                        related_papers = search_papers_fast(related_term, max_results // 3)
+                        all_papers.extend(related_papers)
+                        logger.info(f"Related term '{related_term}' search returned {len(related_papers)} papers")
+        except Exception as e:
+            logger.warning(f"Related terms search failed: {e}")
+    
+    # Strategy 5: Try one more time with exact topic match
+    if len(all_papers) < 3:
+        logger.info("Strategy 5: Final attempt with exact topic match")
         try:
             exact_papers = search_papers_fast(topic, 6)
             all_papers.extend(exact_papers)
@@ -421,9 +443,11 @@ def search_arxiv_api(topic, max_results=5):
         
         # Use multiple search strategies for better results
         search_queries = [
+            f"all:{topic}",  # All fields search (most comprehensive)
             f"ti:{topic}",  # Title search
-            f"all:{topic}",  # All fields search
-            f'"{topic}"'  # Exact phrase search
+            f'"{topic}"',  # Exact phrase search
+            topic,  # Simple search without prefix
+            topic.replace(' ', '+')  # URL encoded version
         ]
         
         all_papers = []
@@ -497,7 +521,9 @@ def search_semantic_scholar_api(topic, max_results=5):
         search_queries = [
             topic,  # Original query
             f'"{topic}"',  # Exact phrase
-            topic.replace(' ', '+')  # URL encoded
+            topic.replace(' ', '+'),  # URL encoded
+            topic.replace(' ', ' AND '),  # AND search
+            topic.replace(' ', ' OR ')  # OR search
         ]
         
         all_papers = []
@@ -677,13 +703,13 @@ def search_papers():
                             logger.info("No papers found by exact author match")
                     else:
                         # For non-author searches, use normal filtering
-                        relevant_papers = [p for p in unique_papers if p.get('relevance_score', 0) >= 15]
+                        relevant_papers = [p for p in unique_papers if p.get('relevance_score', 0) >= 5]  # Lower threshold
                         
                         if relevant_papers:
                             papers = relevant_papers[:8]  # Return top 8 most relevant papers
-                            logger.info(f"Found {len(papers)} highly relevant papers from APIs")
+                            logger.info(f"Found {len(papers)} relevant papers from APIs")
                         else:
-                            # If no highly relevant papers, return top papers even with lower scores
+                            # If no relevant papers, return top papers even with lower scores
                             papers = unique_papers[:5]
                             logger.info(f"Found {len(papers)} papers (some with lower relevance scores)")
                     
