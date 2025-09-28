@@ -29,6 +29,10 @@ except Exception as e:
 # Initialize API settings
 logger.info("API-based search system initialized")
 
+# Simple in-memory cache for search results
+search_cache = {}
+CACHE_DURATION = 300  # 5 minutes
+
 # Advanced relevance scoring system
 def advanced_relevance_scoring(paper, original_topic, query_variations=None):
     """
@@ -299,30 +303,60 @@ def expand_search_query(topic):
 
 def search_papers_fast(topic, max_results=10):
     """
-    Fast paper search using multiple APIs with improved error handling
+    Fast paper search using multiple APIs with improved error handling and retry
     """
     logger.info(f"Starting fast paper search for topic: '{topic}'")
     
     all_papers = []
+    max_retries = 3
     
-    try:
-        # Search arXiv API
-        logger.info("Searching arXiv API...")
-        arxiv_papers = search_arxiv_api(topic, max_results // 2)
-        all_papers.extend(arxiv_papers)
-        logger.info(f"arXiv returned {len(arxiv_papers)} papers")
-        
-        # Search Semantic Scholar API
-        logger.info("Searching Semantic Scholar API...")
-        semantic_papers = search_semantic_scholar_api(topic, max_results // 2)
-        all_papers.extend(semantic_papers)
-        logger.info(f"Semantic Scholar returned {len(semantic_papers)} papers")
-        
-        return all_papers
-        
-    except Exception as e:
-        logger.error(f"Fast search failed: {e}")
-        return []
+    # Search arXiv API with retry
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"Searching arXiv API (attempt {attempt + 1}/{max_retries})...")
+            arxiv_papers = search_arxiv_api(topic, max_results // 2)
+            if arxiv_papers:
+                all_papers.extend(arxiv_papers)
+                logger.info(f"arXiv returned {len(arxiv_papers)} papers")
+                break
+            else:
+                logger.warning(f"arXiv returned no papers on attempt {attempt + 1}")
+                if attempt < max_retries - 1:
+                    time.sleep(1)  # Wait before retry
+        except Exception as e:
+            logger.error(f"arXiv search attempt {attempt + 1} failed: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(1)  # Wait before retry
+    
+    # Search Semantic Scholar API with retry
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"Searching Semantic Scholar API (attempt {attempt + 1}/{max_retries})...")
+            semantic_papers = search_semantic_scholar_api(topic, max_results // 2)
+            if semantic_papers:
+                all_papers.extend(semantic_papers)
+                logger.info(f"Semantic Scholar returned {len(semantic_papers)} papers")
+                break
+            else:
+                logger.warning(f"Semantic Scholar returned no papers on attempt {attempt + 1}")
+                if attempt < max_retries - 1:
+                    time.sleep(1)  # Wait before retry
+        except Exception as e:
+            logger.error(f"Semantic Scholar search attempt {attempt + 1} failed: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(1)  # Wait before retry
+    
+    # Deduplicate results
+    seen_titles = set()
+    unique_papers = []
+    for paper in all_papers:
+        title_key = paper['title'].lower().replace(' ', '').replace('-', '').replace('_', '')
+        if title_key not in seen_titles:
+            seen_titles.add(title_key)
+            unique_papers.append(paper)
+    
+    logger.info(f"Total unique papers found: {len(unique_papers)}")
+    return unique_papers
 
 def search_papers_robust(topic, max_results=10):
     """
@@ -395,9 +429,13 @@ def search_arxiv_api(topic, max_results=5):
         all_papers = []
         
         for search_query in search_queries:
-            url = f"https://export.arxiv.org/api/query?search_query={search_query}&start=0&max_results={max_results}&sortBy=relevance&sortOrder=descending"
-            logger.info(f"Searching arXiv with URL: {url}")
-            response = requests.get(url, timeout=8)
+            try:
+                url = f"https://export.arxiv.org/api/query?search_query={search_query}&start=0&max_results={max_results}&sortBy=relevance&sortOrder=descending"
+                logger.info(f"Searching arXiv with URL: {url}")
+                response = requests.get(url, timeout=10)
+            except Exception as e:
+                logger.error(f"arXiv request failed for query '{search_query}': {e}")
+                continue
             
             if response.status_code == 200:
                 root = ET.fromstring(response.content)
@@ -465,9 +503,13 @@ def search_semantic_scholar_api(topic, max_results=5):
         all_papers = []
         
         for query in search_queries:
-            url = f"https://api.semanticscholar.org/graph/v1/paper/search?query={query}&limit={max_results}&fields=title,authors,abstract,url,year,citationCount,isOpenAccess&sort=relevance"
-            logger.info(f"Searching Semantic Scholar with URL: {url}")
-            response = requests.get(url, timeout=8)
+            try:
+                url = f"https://api.semanticscholar.org/graph/v1/paper/search?query={query}&limit={max_results}&fields=title,authors,abstract,url,year,citationCount,isOpenAccess&sort=relevance"
+                logger.info(f"Searching Semantic Scholar with URL: {url}")
+                response = requests.get(url, timeout=10)
+            except Exception as e:
+                logger.error(f"Semantic Scholar request failed for query '{query}': {e}")
+                continue
             
             if response.status_code == 200:
                 data = response.json()
@@ -583,62 +625,79 @@ def search_papers():
         
         # Use robust search for ALL queries - no hardcoded papers
         papers = []
-        try:
-            # Use robust search strategy
-            logger.info("Using robust search strategy")
-            all_papers = search_papers_robust(topic, 12)
-            logger.info(f"Robust search returned {len(all_papers)} papers")
-            
-            if all_papers:
-                # Deduplicate based on title similarity
-                seen_titles = set()
-                unique_papers = []
-                for paper in all_papers:
-                    title_key = paper['title'].lower().replace(' ', '').replace('-', '').replace('_', '')
-                    if title_key not in seen_titles:
-                        seen_titles.add(title_key)
-                        unique_papers.append(paper)
-                
-                # Use advanced relevance scoring
-                search_queries = expand_search_query(topic)
-                logger.info(f"Scoring {len(unique_papers)} papers with advanced relevance algorithm")
-                for paper in unique_papers:
-                    paper['relevance_score'] = advanced_relevance_scoring(paper, topic, search_queries)
-                
-                # Sort by relevance score (highest first)
-                unique_papers.sort(key=lambda x: x.get('relevance_score', 0), reverse=True)
-                
-                # Check if this is an author search
-                is_author_search = any(pattern in topic.lower() for pattern in ['author:', 'by ', 'written by', 'papers by']) or any(word in topic.lower() for word in ['bhatia', 'smith', 'johnson', 'garcia', 'miller', 'davis', 'rodriguez', 'martinez', 'hernandez', 'lopez'])
-                
-                if is_author_search:
-                    # For author searches, only return papers with exact author matches
-                    author_matched_papers = [p for p in unique_papers if p.get('relevance_score', 0) >= 80]  # High threshold for author matches
-                    if author_matched_papers:
-                        papers = author_matched_papers[:5]
-                        logger.info(f"Found {len(papers)} papers by exact author match")
-                    else:
-                        papers = []
-                        logger.info("No papers found by exact author match")
-                else:
-                    # For non-author searches, use normal filtering
-                    relevant_papers = [p for p in unique_papers if p.get('relevance_score', 0) >= 15]
-                    
-                    if relevant_papers:
-                        papers = relevant_papers[:8]  # Return top 8 most relevant papers
-                        logger.info(f"Found {len(papers)} highly relevant papers from APIs")
-                    else:
-                        # If no highly relevant papers, return top papers even with lower scores
-                        papers = unique_papers[:5]
-                        logger.info(f"Found {len(papers)} papers (some with lower relevance scores)")
+        
+        # Check cache first
+        cache_key = topic.lower().strip()
+        if cache_key in search_cache:
+            cache_time, cached_papers = search_cache[cache_key]
+            if time.time() - cache_time < CACHE_DURATION:
+                logger.info(f"Returning cached results for '{topic}' ({len(cached_papers)} papers)")
+                papers = cached_papers
             else:
-                logger.info("No papers found from APIs")
-                papers = []
+                # Cache expired, remove it
+                del search_cache[cache_key]
+        
+        if not papers:
+            try:
+                # Use robust search strategy
+                logger.info("Using robust search strategy")
+                all_papers = search_papers_robust(topic, 12)
+                logger.info(f"Robust search returned {len(all_papers)} papers")
+                
+                if all_papers:
+                    # Deduplicate based on title similarity
+                    seen_titles = set()
+                    unique_papers = []
+                    for paper in all_papers:
+                        title_key = paper['title'].lower().replace(' ', '').replace('-', '').replace('_', '')
+                        if title_key not in seen_titles:
+                            seen_titles.add(title_key)
+                            unique_papers.append(paper)
                     
-        except Exception as e:
-            logger.error(f"Fast API search failed: {e}")
-            logger.info("No fallback papers - returning empty results")
-            papers = []
+                    # Use advanced relevance scoring
+                    search_queries = expand_search_query(topic)
+                    logger.info(f"Scoring {len(unique_papers)} papers with advanced relevance algorithm")
+                    for paper in unique_papers:
+                        paper['relevance_score'] = advanced_relevance_scoring(paper, topic, search_queries)
+                    
+                    # Sort by relevance score (highest first)
+                    unique_papers.sort(key=lambda x: x.get('relevance_score', 0), reverse=True)
+                    
+                    # Check if this is an author search
+                    is_author_search = any(pattern in topic.lower() for pattern in ['author:', 'by ', 'written by', 'papers by']) or any(word in topic.lower() for word in ['bhatia', 'smith', 'johnson', 'garcia', 'miller', 'davis', 'rodriguez', 'martinez', 'hernandez', 'lopez'])
+                    
+                    if is_author_search:
+                        # For author searches, only return papers with exact author matches
+                        author_matched_papers = [p for p in unique_papers if p.get('relevance_score', 0) >= 80]  # High threshold for author matches
+                        if author_matched_papers:
+                            papers = author_matched_papers[:5]
+                            logger.info(f"Found {len(papers)} papers by exact author match")
+                        else:
+                            papers = []
+                            logger.info("No papers found by exact author match")
+                    else:
+                        # For non-author searches, use normal filtering
+                        relevant_papers = [p for p in unique_papers if p.get('relevance_score', 0) >= 15]
+                        
+                        if relevant_papers:
+                            papers = relevant_papers[:8]  # Return top 8 most relevant papers
+                            logger.info(f"Found {len(papers)} highly relevant papers from APIs")
+                        else:
+                            # If no highly relevant papers, return top papers even with lower scores
+                            papers = unique_papers[:5]
+                            logger.info(f"Found {len(papers)} papers (some with lower relevance scores)")
+                    
+                    # Cache the results
+                    search_cache[cache_key] = (time.time(), papers)
+                    logger.info(f"Cached results for '{topic}' ({len(papers)} papers)")
+                else:
+                    logger.info("No papers found from APIs")
+                    papers = []
+                    
+            except Exception as e:
+                logger.error(f"Fast API search failed: {e}")
+                logger.info("No fallback papers - returning empty results")
+                papers = []
         
         logger.info(f"Found {len(papers)} papers")
         for i, paper in enumerate(papers):
