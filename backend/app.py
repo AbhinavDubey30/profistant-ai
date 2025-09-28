@@ -308,6 +308,56 @@ def search_papers_fast(topic, max_results=10):
         logger.error(f"Fast search failed: {e}")
         return []
 
+def search_papers_robust(topic, max_results=10):
+    """
+    Robust paper search with multiple fallback strategies
+    """
+    logger.info(f"Starting robust paper search for topic: '{topic}'")
+    
+    all_papers = []
+    
+    # Strategy 1: Try fast API search
+    try:
+        logger.info("Strategy 1: Fast API search")
+        api_papers = search_papers_fast(topic, max_results)
+        all_papers.extend(api_papers)
+        logger.info(f"Fast API search returned {len(api_papers)} papers")
+    except Exception as e:
+        logger.warning(f"Fast API search failed: {e}")
+    
+    # Strategy 2: Try with simplified query if no results
+    if len(all_papers) < 3:
+        try:
+            logger.info("Strategy 2: Simplified query search")
+            # Simplify the query by taking first few words
+            simple_query = ' '.join(topic.split()[:3])
+            simple_papers = search_papers_fast(simple_query, max_results)
+            all_papers.extend(simple_papers)
+            logger.info(f"Simplified query search returned {len(simple_papers)} papers")
+        except Exception as e:
+            logger.warning(f"Simplified query search failed: {e}")
+    
+    # Strategy 3: Try with individual keywords if still no results
+    if len(all_papers) < 3:
+        try:
+            logger.info("Strategy 3: Keyword-based search")
+            keywords = [word for word in topic.split() if len(word) > 3]
+            for keyword in keywords[:2]:  # Try top 2 keywords
+                keyword_papers = search_papers_fast(keyword, max_results // 2)
+                all_papers.extend(keyword_papers)
+                logger.info(f"Keyword '{keyword}' search returned {len(keyword_papers)} papers")
+        except Exception as e:
+            logger.warning(f"Keyword search failed: {e}")
+    
+    # Strategy 4: Use fallback papers if still no results
+    if len(all_papers) < 3:
+        logger.info("Strategy 4: Using fallback papers")
+        fallback_papers = get_fallback_papers(topic)
+        all_papers.extend(fallback_papers)
+        logger.info(f"Fallback papers returned {len(fallback_papers)} papers")
+    
+    return all_papers
+
 def search_arxiv_api(topic, max_results=5):
     """
     Search arXiv API for real papers with improved query handling
@@ -512,7 +562,7 @@ def get_fallback_papers(topic):
         ]
         return wifi_csi_papers
     
-    # General fallback papers if no specialized match
+    # General fallback papers if no specialized match - all with working links
     fallback_papers = [
         {
             "title": "Attention Is All You Need",
@@ -548,6 +598,27 @@ def get_fallback_papers(topic):
             "abstract": "Deep learning allows computational models that are composed of multiple processing layers to learn representations of data with multiple levels of abstraction. These methods have dramatically improved the state-of-the-art in speech recognition, visual object recognition, object detection and many other domains.",
             "url": "https://www.nature.com/articles/nature14539",
             "year": "2015"
+        },
+        {
+            "title": "ResNet: Deep Residual Learning for Image Recognition",
+            "authors": "He, K., Zhang, X., Ren, S., Sun, J.",
+            "abstract": "We present a residual learning framework to ease the training of networks that are substantially deeper than those used previously. We explicitly reformulate the layers as learning residual functions with reference to the layer inputs, instead of learning unreferenced functions.",
+            "url": "https://arxiv.org/abs/1512.03385",
+            "year": "2016"
+        },
+        {
+            "title": "ImageNet Classification with Deep Convolutional Neural Networks",
+            "authors": "Krizhevsky, A., Sutskever, I., Hinton, G.E.",
+            "abstract": "We trained a large, deep convolutional neural network to classify the 1.2 million high-resolution images in the ImageNet LSVRC-2010 contest into the 1000 different classes. On the test data, we achieved top-1 and top-5 error rates of 37.5% and 17.0% which is considerably better than the previous state-of-the-art.",
+            "url": "https://papers.nips.cc/paper/2012/hash/c399862d3b9d6b76c8436e924a68c45b-Abstract.html",
+            "year": "2012"
+        },
+        {
+            "title": "Long Short-Term Memory",
+            "authors": "Hochreiter, S., Schmidhuber, J.",
+            "abstract": "Learning to store information over extended time intervals by recurrent backpropagation takes a very long time, mostly because of insufficient, decaying error backflow. We briefly review Hochreiter's (1991) analysis of this problem, then address it by introducing a novel, efficient, gradient based method called long short-term memory (LSTM).",
+            "url": "https://www.bioinf.jku.at/publications/older/2604.pdf",
+            "year": "1997"
         }
     ]
     
@@ -582,25 +653,13 @@ def search_papers():
             logger.info("Detected WiFi CSI query - using specialized papers")
             papers = get_fallback_papers(topic)  # This will return WiFi CSI papers
         else:
-            # Use fast API search for all queries
+            # Use robust search for all queries
             papers = []
             try:
-                # Expand search queries for better coverage
-                search_queries = expand_search_query(topic)
-                logger.info(f"Expanded search queries: {search_queries}")
-                
-                all_papers = []
-                
-                # Use fast search for each query variation
-                for query in search_queries[:2]:  # Limit to 2 queries for speed
-                    try:
-                        logger.info(f"Fast searching with query: {query}")
-                        query_papers = search_papers_fast(query, 6)
-                        all_papers.extend(query_papers)
-                        time.sleep(0.3)  # Minimal delay between queries
-                    except Exception as e:
-                        logger.warning(f"Query '{query}' failed: {e}")
-                        continue
+                # Use robust search strategy
+                logger.info("Using robust search strategy")
+                all_papers = search_papers_robust(topic, 12)
+                logger.info(f"Robust search returned {len(all_papers)} papers")
                 
                 if all_papers:
                     # Deduplicate based on title similarity

@@ -26,7 +26,7 @@ export const searchPapers = async (topic, settings) => {
       topic,
       settings
     }, {
-      timeout: 2000 // 2 seconds for super fast results
+      timeout: 15000 // 15 seconds for reliable results
     });
     console.log('Search response:', response.data);
     
@@ -44,7 +44,7 @@ export const searchPapers = async (topic, settings) => {
     console.error('Search error:', error);
     
     if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
-      throw new Error('Search is taking too long. The scholarly API might be slow. Please try again with a more specific search term.');
+      throw new Error('Search is taking too long. Please try again with a more specific search term.');
     }
     
     if (error.response?.data?.error) {
