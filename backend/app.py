@@ -55,10 +55,16 @@ def advanced_relevance_scoring(paper, original_topic, query_variations=None):
     
     # 0. EXACT AUTHOR MATCH SCORING (Highest priority for author searches)
     author_score = 0
-    if is_author_search or any(word in topic_lower for word in ['bhatia', 'smith', 'johnson', 'garcia', 'miller', 'davis', 'rodriguez', 'martinez', 'hernandez', 'lopez']):
+    
+    # Detect author searches more broadly
+    common_surnames = ['bhatia', 'smith', 'johnson', 'garcia', 'miller', 'davis', 'rodriguez', 'martinez', 'hernandez', 'lopez', 'kumar', 'singh', 'patel', 'sharma', 'gupta', 'verma', 'jain', 'agarwal', 'tiwari', 'yadav', 'reddy', 'rao', 'naidu', 'iyer', 'menon', 'nair', 'pillai', 'krishnan', 'ramaswamy', 'srinivasan', 'venkatesh', 'raghavan', 'subramanian', 'chandrasekhar', 'raman', 'bose', 'chatterjee', 'mukherjee', 'banerjee', 'sengupta', 'das', 'roy', 'ghosh', 'majumdar', 'chakraborty', 'dutta', 'saha', 'mondal', 'halder', 'paul', 'sarkar', 'bhattacharya', 'chakravarty', 'bhattacharyya', 'mukhopadhyay', 'sengupta', 'bose', 'chatterjee', 'mukherjee', 'banerjee', 'sengupta', 'das', 'roy', 'ghosh', 'majumdar', 'chakraborty', 'dutta', 'saha', 'mondal', 'halder', 'paul', 'sarkar', 'bhattacharya', 'chakravarty', 'bhattacharyya', 'mukhopadhyay']
+    
+    if is_author_search or any(word in topic_lower for word in common_surnames):
         # Extract potential author names from the topic
         potential_authors = []
         words = topic_lower.split()
+        
+        # Look for name patterns
         for i, word in enumerate(words):
             # Look for capitalized words that might be names
             if word.istitle() or word.isupper():
@@ -67,6 +73,11 @@ def advanced_relevance_scoring(paper, original_topic, query_variations=None):
                     potential_authors.append(f"{word} {words[i + 1]}")
                 else:
                     potential_authors.append(word)
+        
+        # Also check for single word names that might be surnames
+        for word in words:
+            if word in common_surnames:
+                potential_authors.append(word)
         
         # Check for exact author matches
         for author in potential_authors:
@@ -84,6 +95,11 @@ def advanced_relevance_scoring(paper, original_topic, query_variations=None):
     # Exact topic match in title (highest priority)
     if topic_lower in title_lower:
         exact_score += 50
+    
+    # Check for exact title matches (very high priority)
+    if title_lower == topic_lower:
+        exact_score += 100  # Perfect title match gets maximum score
+        logger.info(f"Perfect title match found: '{title_lower}' == '{topic_lower}'")
     
     # Check for exact matches in query variations
     for variation in query_variations:
@@ -369,45 +385,64 @@ def search_arxiv_api(topic, max_results=5):
         import requests
         import xml.etree.ElementTree as ET
         
-        # Use more specific search query format for better results
-        search_query = f"all:{topic}"
-        url = f"https://export.arxiv.org/api/query?search_query={search_query}&start=0&max_results={max_results}&sortBy=relevance&sortOrder=descending"
-        logger.info(f"Searching arXiv with URL: {url}")
-        response = requests.get(url, timeout=8)
+        # Use multiple search strategies for better results
+        search_queries = [
+            f"ti:{topic}",  # Title search
+            f"all:{topic}",  # All fields search
+            f'"{topic}"'  # Exact phrase search
+        ]
         
-        if response.status_code == 200:
-            root = ET.fromstring(response.content)
-            papers = []
+        all_papers = []
+        
+        for search_query in search_queries:
+            url = f"https://export.arxiv.org/api/query?search_query={search_query}&start=0&max_results={max_results}&sortBy=relevance&sortOrder=descending"
+            logger.info(f"Searching arXiv with URL: {url}")
+            response = requests.get(url, timeout=8)
             
-            for entry in root.findall('{http://www.w3.org/2005/Atom}entry'):
-                title = entry.find('{http://www.w3.org/2005/Atom}title').text.strip() if entry.find('{http://www.w3.org/2005/Atom}title') is not None else 'No title'
-                summary = entry.find('{http://www.w3.org/2005/Atom}summary').text.strip() if entry.find('{http://www.w3.org/2005/Atom}summary') is not None else 'No abstract available'
+            if response.status_code == 200:
+                root = ET.fromstring(response.content)
+                papers = []
                 
-                authors = []
-                for author in entry.findall('{http://www.w3.org/2005/Atom}author'):
-                    name = author.find('{http://www.w3.org/2005/Atom}name')
-                    if name is not None:
-                        authors.append(name.text)
+                for entry in root.findall('{http://www.w3.org/2005/Atom}entry'):
+                    title = entry.find('{http://www.w3.org/2005/Atom}title').text.strip() if entry.find('{http://www.w3.org/2005/Atom}title') is not None else 'No title'
+                    summary = entry.find('{http://www.w3.org/2005/Atom}summary').text.strip() if entry.find('{http://www.w3.org/2005/Atom}summary') is not None else 'No abstract available'
+                    
+                    authors = []
+                    for author in entry.findall('{http://www.w3.org/2005/Atom}author'):
+                        name = author.find('{http://www.w3.org/2005/Atom}name')
+                        if name is not None:
+                            authors.append(name.text)
+                    
+                    link = entry.find('{http://www.w3.org/2005/Atom}link[@type="text/html"]')
+                    paper_url = link.get('href') if link is not None else '#'
+                    
+                    published = entry.find('{http://www.w3.org/2005/Atom}published')
+                    year = published.text[:4] if published is not None else 'Unknown'
+                    
+                    papers.append({
+                        "title": title,
+                        "authors": ', '.join(authors) if authors else 'Unknown',
+                        "abstract": summary,
+                        "url": paper_url,
+                        "year": year
+                    })
                 
-                link = entry.find('{http://www.w3.org/2005/Atom}link[@type="text/html"]')
-                paper_url = link.get('href') if link is not None else '#'
-                
-                published = entry.find('{http://www.w3.org/2005/Atom}published')
-                year = published.text[:4] if published is not None else 'Unknown'
-                
-                papers.append({
-                    "title": title,
-                    "authors": ', '.join(authors) if authors else 'Unknown',
-                    "abstract": summary,
-                    "url": paper_url,
-                    "year": year
-                })
-            
-            logger.info(f"arXiv returned {len(papers)} papers")
-            return papers
-        else:
-            logger.error(f"arXiv API error: {response.status_code}")
-            return []
+                all_papers.extend(papers)
+                logger.info(f"arXiv query '{search_query}' returned {len(papers)} papers")
+            else:
+                logger.error(f"arXiv API error for query '{search_query}': {response.status_code}")
+        
+        # Deduplicate papers
+        seen_titles = set()
+        unique_papers = []
+        for paper in all_papers:
+            title_key = paper['title'].lower().replace(' ', '').replace('-', '').replace('_', '')
+            if title_key not in seen_titles:
+                seen_titles.add(title_key)
+                unique_papers.append(paper)
+        
+        logger.info(f"arXiv total unique papers: {len(unique_papers)}")
+        return unique_papers
             
     except Exception as e:
         logger.error(f"arXiv search error: {e}")
@@ -420,31 +455,51 @@ def search_semantic_scholar_api(topic, max_results=5):
     try:
         import requests
         
-        # Use more specific search parameters for better results
-        url = f"https://api.semanticscholar.org/graph/v1/paper/search?query={topic}&limit={max_results}&fields=title,authors,abstract,url,year,citationCount,isOpenAccess&sort=relevance"
-        logger.info(f"Searching Semantic Scholar with URL: {url}")
-        response = requests.get(url, timeout=8)
+        # Use multiple search strategies
+        search_queries = [
+            topic,  # Original query
+            f'"{topic}"',  # Exact phrase
+            topic.replace(' ', '+')  # URL encoded
+        ]
         
-        if response.status_code == 200:
-            data = response.json()
-            papers = []
+        all_papers = []
+        
+        for query in search_queries:
+            url = f"https://api.semanticscholar.org/graph/v1/paper/search?query={query}&limit={max_results}&fields=title,authors,abstract,url,year,citationCount,isOpenAccess&sort=relevance"
+            logger.info(f"Searching Semantic Scholar with URL: {url}")
+            response = requests.get(url, timeout=8)
             
-            if 'data' in data:
-                for paper in data['data']:
-                    authors = [author['name'] for author in paper.get('authors', [])]
-                    papers.append({
-                        "title": paper.get('title', 'No title'),
-                        "authors": ', '.join(authors) if authors else 'Unknown',
-                        "abstract": paper.get('abstract', 'No abstract available'),
-                        "url": paper.get('url', '#'),
-                        "year": str(paper.get('year', 'Unknown'))
-                    })
-            
-            logger.info(f"Semantic Scholar returned {len(papers)} papers")
-            return papers
-        else:
-            logger.error(f"Semantic Scholar API error: {response.status_code}")
-            return []
+            if response.status_code == 200:
+                data = response.json()
+                papers = []
+                
+                if 'data' in data:
+                    for paper in data['data']:
+                        authors = [author['name'] for author in paper.get('authors', [])]
+                        papers.append({
+                            "title": paper.get('title', 'No title'),
+                            "authors": ', '.join(authors) if authors else 'Unknown',
+                            "abstract": paper.get('abstract', 'No abstract available'),
+                            "url": paper.get('url', '#'),
+                            "year": str(paper.get('year', 'Unknown'))
+                        })
+                
+                all_papers.extend(papers)
+                logger.info(f"Semantic Scholar query '{query}' returned {len(papers)} papers")
+            else:
+                logger.error(f"Semantic Scholar API error for query '{query}': {response.status_code}")
+        
+        # Deduplicate papers
+        seen_titles = set()
+        unique_papers = []
+        for paper in all_papers:
+            title_key = paper['title'].lower().replace(' ', '').replace('-', '').replace('_', '')
+            if title_key not in seen_titles:
+                seen_titles.add(title_key)
+                unique_papers.append(paper)
+        
+        logger.info(f"Semantic Scholar total unique papers: {len(unique_papers)}")
+        return unique_papers
             
     except Exception as e:
         logger.error(f"Semantic Scholar search error: {e}")
