@@ -1282,6 +1282,7 @@ def test_endpoint():
     return jsonify({'message': 'Backend is working!', 'timestamp': time.time()})
 
 if __name__ == '__main__':
-    logger.info("Starting Flask server...")
-    logger.info("Server will run on http://0.0.0.0:5000")
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    port = int(os.environ.get('PORT', 5000))
+    logger.info(f"Starting Flask server on port {port}...")
+    logger.info(f"Server will run on http://0.0.0.0:{port}")
+    app.run(debug=False, host='0.0.0.0', port=port)
