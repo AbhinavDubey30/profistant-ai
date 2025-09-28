@@ -33,50 +33,72 @@ except Exception as e:
     logger.error(f"Failed to initialize Scholarly: {e}")
     scholarly_available = False
 
-# Ultra-fast search function optimized for Vercel (10s timeout)
-def search_papers_vercel(topic, max_results=6):
+# ULTRA-MINIMAL search function for Vercel (5s timeout)
+def search_papers_vercel(topic, max_results=4):
     """
-    Ultra-fast paper search optimized for Vercel's 10-second timeout limit
+    ULTRA-MINIMAL paper search for Vercel's strict timeout limits
+    Only Google Scholar, no arXiv, maximum speed
     """
-    logger.info(f"Starting Vercel-optimized search for topic: '{topic}'")
+    logger.info(f"Starting ULTRA-MINIMAL search for topic: '{topic}'")
     
-    all_papers = []
-    
-    # Try Google Scholar first (usually fastest)
+    # Try ONLY Google Scholar (fastest and most reliable)
     try:
-        logger.info("Searching Google Scholar (single attempt)...")
-        scholar_papers = search_scholar_api(topic, max_results // 2)
+        logger.info("Searching Google Scholar ONLY (ultra-fast)...")
+        scholar_papers = search_scholar_api_fast(topic, max_results)
         if scholar_papers:
-            all_papers.extend(scholar_papers)
             logger.info(f"Google Scholar returned {len(scholar_papers)} papers")
+            return scholar_papers[:max_results]
     except Exception as e:
         logger.error(f"Google Scholar search failed: {e}")
     
-    # Try arXiv API (single attempt)
+    # If Google Scholar fails, return empty (no fallbacks)
+    logger.info("No papers found - returning empty result")
+    return []
+
+def search_scholar_api_fast(topic, max_results=4):
+    """
+    ULTRA-FAST Google Scholar search optimized for Vercel timeout limits
+    """
+    if not scholarly_available:
+        return []
+    
     try:
-        logger.info("Searching arXiv API (single attempt)...")
-        arxiv_papers = search_arxiv_api_simple(topic, max_results // 2)
-        if arxiv_papers:
-            all_papers.extend(arxiv_papers)
-            logger.info(f"arXiv returned {len(arxiv_papers)} papers")
+        logger.info(f"ULTRA-FAST Google Scholar search for: '{topic}'")
+        search_query = scholarly.search_pubs(topic)
+        papers = []
+        
+        # Limit to max_results with minimal processing
+        for i in range(max_results):
+            try:
+                paper = next(search_query)
+                
+                # Minimal data extraction for speed
+                bib = paper.get("bib", {})
+                papers.append({
+                    "title": bib.get("title", "No title"),
+                    "authors": bib.get("author", "Unknown"),
+                    "abstract": bib.get("abstract", "No abstract available"),
+                    "url": paper.get("pub_url", "#"),
+                    "year": str(bib.get("pub_year", "Unknown")),
+                    "source": "Google Scholar"
+                })
+                
+            except StopIteration:
+                break
+            except Exception as e:
+                logger.warning(f"Error processing paper {i+1}: {e}")
+                break  # Stop on first error for speed
+        
+        logger.info(f"ULTRA-FAST Google Scholar returned {len(papers)} papers")
+        return papers
+        
     except Exception as e:
-        logger.error(f"arXiv search failed: {e}")
-    
-    # Deduplicate results
-    seen_titles = set()
-    unique_papers = []
-    for paper in all_papers:
-        title_key = paper['title'].lower().replace(' ', '').replace('-', '').replace('_', '')
-        if title_key not in seen_titles:
-            seen_titles.add(title_key)
-            unique_papers.append(paper)
-    
-    logger.info(f"Total unique papers found: {len(unique_papers)}")
-    return unique_papers
+        logger.error(f"Google Scholar ULTRA-FAST search error: {e}")
+        return []
 
 def search_scholar_api(topic, max_results=5):
     """
-    Search Google Scholar using the scholarly library
+    Standard Google Scholar search (kept for compatibility)
     """
     if not scholarly_available:
         return []
@@ -195,8 +217,8 @@ def search_papers():
         
         logger.info(f"Searching for: {topic}")
         
-        # Use Vercel-optimized search (no hardcoded papers)
-        papers = search_papers_vercel(topic, 6)
+        # Use ULTRA-MINIMAL search (no hardcoded papers)
+        papers = search_papers_vercel(topic, 4)
         
         if papers:
             # Calculate average relevance (simplified)
