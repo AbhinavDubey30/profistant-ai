@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || (process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:5000');
+const API_BASE_URL = process.env.REACT_APP_API_URL || (process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:5000/api');
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -10,7 +10,7 @@ const api = axios.create({
 // Test connection to backend
 export const testConnection = async () => {
   try {
-    const response = await api.get('/api/test');
+    const response = await api.get('/test');
     console.log('Backend connection test:', response.data);
     return true;
   } catch (error) {
@@ -22,7 +22,7 @@ export const testConnection = async () => {
 export const searchPapers = async (topic, settings) => {
   try {
     console.log('Searching papers for:', topic);
-    const response = await api.post('/api/search-papers', {
+    const response = await api.post('/search-papers', {
       topic,
       settings
     }, {
@@ -65,7 +65,7 @@ export const searchPapers = async (topic, settings) => {
 
 export const summarizePaper = async (abstract, title = '') => {
   try {
-    const response = await api.post('/api/summarize', {
+    const response = await api.post('/summarize', {
       abstract,
       title
     });
@@ -80,7 +80,7 @@ export const summarizePaper = async (abstract, title = '') => {
 
 export const getResearchGaps = async (abstract, title = '') => {
   try {
-    const response = await api.post('/api/research-gaps', {
+    const response = await api.post('/research-gaps', {
       abstract,
       title
     });
@@ -95,7 +95,7 @@ export const getResearchGaps = async (abstract, title = '') => {
 
 export const getReadingList = async () => {
   try {
-    const response = await api.get('/api/reading-list');
+    const response = await api.get('/reading-list');
     return response.data.papers;
   } catch (error) {
     throw new Error('Failed to load reading list');
@@ -104,7 +104,7 @@ export const getReadingList = async () => {
 
 export const saveToReadingList = async (paper) => {
   try {
-    const response = await api.post('/api/reading-list', paper);
+    const response = await api.post('/reading-list', paper);
     return response.data;
   } catch (error) {
     throw new Error('Failed to save paper');
@@ -113,7 +113,7 @@ export const saveToReadingList = async (paper) => {
 
 export const generateCalendar = async (readingList, totalWeeks, selectedDays, timeRange) => {
   try {
-    const response = await api.post('/api/calendar-export', {
+    const response = await api.post('/calendar-export', {
       readingList,
       totalWeeks,
       selectedDays,
@@ -130,7 +130,7 @@ export const generateCalendar = async (readingList, totalWeeks, selectedDays, ti
 
 export const generateResearchPlan = async (readingList, totalWeeks, selectedDays, timeRange) => {
   try {
-    const response = await api.post('/api/research-plan', {
+    const response = await api.post('/research-plan', {
       readingList,
       totalWeeks,
       selectedDays,
@@ -147,7 +147,7 @@ export const generateResearchPlan = async (readingList, totalWeeks, selectedDays
 
 export const generateResearchIdeas = async (readingList) => {
   try {
-    const response = await api.post('/api/research-ideas', {
+    const response = await api.post('/research-ideas', {
       readingList
     });
     return response.data;
