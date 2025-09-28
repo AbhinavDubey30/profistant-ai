@@ -109,6 +109,8 @@ with st.sidebar:
                 st.error(f"❌ Proxy configuration failed: {str(e)}")
     
     # Timeout settings
+    if 'timeout' not in st.session_state:
+        st.session_state.timeout = 15
     timeout = st.slider("Request Timeout (seconds)", 5, 30, st.session_state.timeout)
     st.session_state.timeout = timeout
     

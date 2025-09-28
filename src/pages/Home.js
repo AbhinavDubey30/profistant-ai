@@ -67,15 +67,22 @@ const Home = ({ readingList, addToReadingList, settings, setSettings }) => {
       setStatusText('📊 Finalizing search...');
       
       // Use the backend API instead of instant search
+      console.log('🔍 Calling searchPapers API...');
       const response = await searchPapers(topic, settings);
+      console.log('📊 API Response received:', response);
+      console.log('📊 Papers array:', response.papers);
+      console.log('📊 Papers length:', response.papers?.length);
+      
       setPapers(response.papers);
       
       setProgress(100);
       setStatusText('✅ Search completed!');
       
-      if (response.papers.length > 0) {
+      if (response.papers && response.papers.length > 0) {
+        console.log('✅ Setting success message with papers');
         setSuccess(`🎉 ${response.message}`);
       } else {
+        console.log('❌ No papers found, setting empty message');
         setSuccess('📚 No papers found');
       }
     } catch (err) {

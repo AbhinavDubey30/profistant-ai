@@ -21,25 +21,35 @@ export const testConnection = async () => {
 
 export const searchPapers = async (topic, settings) => {
   try {
-    console.log('Searching papers for:', topic);
+    console.log('🔍 API: Searching papers for:', topic);
+    console.log('🔍 API: Base URL:', api.defaults.baseURL);
+    console.log('🔍 API: Full endpoint:', `${api.defaults.baseURL}/search-papers`);
+    
     const response = await api.post('/search-papers', {
       topic,
       settings
     }, {
-      timeout: 15000 // 15 seconds for reliable results
+      timeout: 25000 // 25 seconds for reliable results
     });
-    console.log('Search response:', response.data);
+    
+    console.log('📊 API: Response status:', response.status);
+    console.log('📊 API: Response data:', response.data);
+    console.log('📊 API: Papers in response:', response.data.papers);
+    console.log('📊 API: Papers count:', response.data.papers?.length);
     
     // Handle fallback results
     if (response.data.fallback) {
-      console.warn('Using fallback results:', response.data.message);
+      console.warn('⚠️ API: Using fallback results:', response.data.message);
     }
     
-    return {
+    const result = {
       papers: response.data.papers,
       isFallback: response.data.fallback || false,
       message: response.data.message || null
     };
+    
+    console.log('📊 API: Returning result:', result);
+    return result;
   } catch (error) {
     console.error('Search error:', error);
     
