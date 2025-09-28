@@ -41,6 +41,7 @@ def advanced_relevance_scoring(paper, original_topic, query_variations=None):
     - Paper recency
     - Abstract quality
     - Title relevance
+    - Exact author name matching
     """
     if query_variations is None:
         query_variations = [original_topic]
@@ -50,6 +51,35 @@ def advanced_relevance_scoring(paper, original_topic, query_variations=None):
     abstract_lower = paper.get('abstract', '').lower()
     topic_lower = original_topic.lower()
     year = paper.get('year', 'Unknown')
+    authors = paper.get('authors', '')
+    
+    # Check if this is an author search (contains common author name patterns)
+    is_author_search = any(pattern in topic_lower for pattern in ['author:', 'by ', 'written by', 'papers by'])
+    
+    # 0. EXACT AUTHOR MATCH SCORING (Highest priority for author searches)
+    author_score = 0
+    if is_author_search or any(word in topic_lower for word in ['bhatia', 'smith', 'johnson', 'garcia', 'miller', 'davis', 'rodriguez', 'martinez', 'hernandez', 'lopez']):
+        # Extract potential author names from the topic
+        potential_authors = []
+        words = topic_lower.split()
+        for i, word in enumerate(words):
+            # Look for capitalized words that might be names
+            if word.istitle() or word.isupper():
+                # Check if next word is also capitalized (for full names)
+                if i + 1 < len(words) and (words[i + 1].istitle() or words[i + 1].isupper()):
+                    potential_authors.append(f"{word} {words[i + 1]}")
+                else:
+                    potential_authors.append(word)
+        
+        # Check for exact author matches
+        for author in potential_authors:
+            if author.lower() in authors.lower():
+                author_score += 100  # Very high score for exact author match
+                logger.info(f"Exact author match found: {author} in {authors}")
+        
+        # If it's clearly an author search but no exact match, heavily penalize
+        if is_author_search and author_score == 0:
+            author_score = -50  # Heavy penalty for author searches with no match
     
     # 1. EXACT MATCH SCORING (40% weight)
     exact_score = 0
@@ -170,14 +200,26 @@ def advanced_relevance_scoring(paper, original_topic, query_variations=None):
             title_bonus += 1
     
     # Calculate final weighted score
-    final_score = (
-        exact_score * 0.40 +
-        keyword_score * 0.25 +
-        semantic_score * 0.20 +
-        recency_score * 0.10 +
-        quality_score * 0.05 +
-        title_bonus
-    )
+    if author_score > 0:
+        # For author matches, prioritize author score heavily
+        final_score = author_score + (
+            exact_score * 0.20 +
+            keyword_score * 0.15 +
+            semantic_score * 0.10 +
+            recency_score * 0.05 +
+            quality_score * 0.05 +
+            title_bonus
+        )
+    else:
+        # For non-author searches, use normal weighting
+        final_score = (
+            exact_score * 0.40 +
+            keyword_score * 0.25 +
+            semantic_score * 0.20 +
+            recency_score * 0.10 +
+            quality_score * 0.05 +
+            title_bonus
+        )
     
     # Normalize score to 0-100 range
     final_score = min(100, max(0, final_score))
@@ -191,7 +233,22 @@ def expand_search_query(topic):
     base_query = topic.lower()
     expanded_queries = [topic]  # Always include original
     
-    # Define query expansion rules
+    # Check if this is an author search
+    is_author_search = any(pattern in base_query for pattern in ['author:', 'by ', 'written by', 'papers by'])
+    
+    if is_author_search:
+        # For author searches, don't expand much to avoid confusion
+        # Just add variations with "author:" prefix
+        author_name = base_query.replace('author:', '').replace('by ', '').replace('written by', '').replace('papers by', '').strip()
+        if author_name:
+            expanded_queries.extend([
+                f"author:{author_name}",
+                f"by {author_name}",
+                f"papers by {author_name}"
+            ])
+        return expanded_queries[:3]  # Limit author searches to 3 variations
+    
+    # Define query expansion rules for non-author searches
     expansions = {
         'wifi': ['wireless', 'wi-fi', '802.11', 'rf sensing'],
         'csi': ['channel state information', 'channel', 'signal'],
@@ -581,16 +638,29 @@ def search_papers():
                     # Sort by relevance score (highest first)
                     unique_papers.sort(key=lambda x: x.get('relevance_score', 0), reverse=True)
                     
-                    # Filter out papers with very low relevance scores
-                    relevant_papers = [p for p in unique_papers if p.get('relevance_score', 0) >= 20]
+                    # Check if this is an author search
+                    is_author_search = any(pattern in topic.lower() for pattern in ['author:', 'by ', 'written by', 'papers by']) or any(word in topic.lower() for word in ['bhatia', 'smith', 'johnson', 'garcia', 'miller', 'davis', 'rodriguez', 'martinez', 'hernandez', 'lopez'])
                     
-                    if relevant_papers:
-                        papers = relevant_papers[:8]  # Return top 8 most relevant papers
-                        logger.info(f"Found {len(papers)} highly relevant papers from APIs")
+                    if is_author_search:
+                        # For author searches, only return papers with exact author matches
+                        author_matched_papers = [p for p in unique_papers if p.get('relevance_score', 0) >= 80]  # High threshold for author matches
+                        if author_matched_papers:
+                            papers = author_matched_papers[:5]
+                            logger.info(f"Found {len(papers)} papers by exact author match")
+                        else:
+                            papers = []
+                            logger.info("No papers found by exact author match")
                     else:
-                        # If no highly relevant papers, return top papers even with lower scores
-                        papers = unique_papers[:5]
-                        logger.info(f"Found {len(papers)} papers (some with lower relevance scores)")
+                        # For non-author searches, use normal filtering
+                        relevant_papers = [p for p in unique_papers if p.get('relevance_score', 0) >= 20]
+                        
+                        if relevant_papers:
+                            papers = relevant_papers[:8]  # Return top 8 most relevant papers
+                            logger.info(f"Found {len(papers)} highly relevant papers from APIs")
+                        else:
+                            # If no highly relevant papers, return top papers even with lower scores
+                            papers = unique_papers[:5]
+                            logger.info(f"Found {len(papers)} papers (some with lower relevance scores)")
                 else:
                     logger.info("No papers found from APIs, using fallback")
                     papers = get_fallback_papers(topic)
