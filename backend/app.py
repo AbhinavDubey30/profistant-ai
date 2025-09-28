@@ -349,12 +349,15 @@ def search_papers_robust(topic, max_results=10):
         except Exception as e:
             logger.warning(f"Keyword search failed: {e}")
     
-    # Strategy 4: Use fallback papers if still no results
+    # Strategy 4: Try one more time with exact topic match
     if len(all_papers) < 3:
-        logger.info("Strategy 4: Using fallback papers")
-        fallback_papers = get_fallback_papers(topic)
-        all_papers.extend(fallback_papers)
-        logger.info(f"Fallback papers returned {len(fallback_papers)} papers")
+        logger.info("Strategy 4: Final attempt with exact topic match")
+        try:
+            exact_papers = search_papers_fast(topic, 6)
+            all_papers.extend(exact_papers)
+            logger.info(f"Exact topic search returned {len(exact_papers)} papers")
+        except Exception as e:
+            logger.warning(f"Exact topic search failed: {e}")
     
     return all_papers
 
@@ -449,11 +452,11 @@ def search_semantic_scholar_api(topic, max_results=5):
 
 def get_fallback_papers(topic):
     """
-    Provide fallback papers when APIs fail
+    Provide fallback papers when APIs fail - NO HARDCODED PAPERS
     """
-    logger.info(f"Providing fallback papers for topic: {topic}")
+    logger.info(f"Attempting to find real papers for topic: {topic}")
     
-    # Try real API searches first with multiple query variations
+    # Try real API searches with multiple strategies
     try:
         # Expand search queries for better coverage
         search_queries = expand_search_query(topic)
@@ -465,10 +468,10 @@ def get_fallback_papers(topic):
         for query in search_queries[:3]:  # Limit to 3 queries to avoid rate limiting
             try:
                 logger.info(f"Searching with query: {query}")
-                arxiv_papers = search_arxiv_api(query, 3)
-                semantic_papers = search_semantic_scholar_api(query, 3)
+                arxiv_papers = search_arxiv_api(query, 4)
+                semantic_papers = search_semantic_scholar_api(query, 4)
                 all_papers.extend(arxiv_papers + semantic_papers)
-                time.sleep(1)  # Small delay between queries
+                time.sleep(0.5)  # Small delay between queries
             except Exception as e:
                 logger.warning(f"Query '{query}' failed: {e}")
                 continue
@@ -492,137 +495,17 @@ def get_fallback_papers(topic):
             unique_papers.sort(key=lambda x: x.get('relevance_score', 0), reverse=True)
             
             # Filter out papers with very low relevance scores
-            relevant_papers = [p for p in unique_papers if p.get('relevance_score', 0) >= 15]
+            relevant_papers = [p for p in unique_papers if p.get('relevance_score', 0) >= 10]
             
-            logger.info(f"Found {len(relevant_papers)} highly relevant papers")
+            logger.info(f"Found {len(relevant_papers)} relevant papers from real APIs")
             return relevant_papers[:8]  # Return top 8 most relevant papers
     
     except Exception as e:
         logger.error(f"API search failed: {e}")
     
-    # Specialized fallback papers for WiFi CSI and vital signs
-    if any(keyword in topic.lower() for keyword in ['wifi', 'csi', 'heart', 'breathing', 'vital', 'signs', 'wireless', 'sensing', 'hr', 'br', 'respiration', 'contactless', 'monitoring', 'channel state']):
-        wifi_csi_papers = [
-            {
-                "title": "Non-Contact Heart Rate Monitoring Method Based on Wi-Fi CSI Signal",
-                "authors": "Wang, J., Zhang, L., Chen, X., Liu, Y.",
-                "abstract": "This study presents an innovative non-contact heart rate monitoring method that integrates both amplitude and phase information of the Wi-Fi CSI signal through rotational projection. A frequency domain subcarrier selection algorithm based on Heartbeat to Subcomponent Ratio (HSR) is developed, along with signal filtering and subcarrier selection processes to enhance heart rate estimation accuracy. Experimental results demonstrate an average accuracy of 96.8%, with a median error of only 0.8 beats per minute, representing approximately a 20% performance improvement over existing technologies.",
-                "url": "https://pubmed.ncbi.nlm.nih.gov/38610322/",
-                "year": "2024"
-            },
-            {
-                "title": "WiRM: Wireless Respiration Monitoring Using Conjugate Multiple Channel State Information and Fast Iterative Filtering in Wi-Fi Systems",
-                "authors": "Li, H., Wang, S., Zhang, M., Chen, K.",
-                "abstract": "This paper introduces WiRM, a two-stage approach to contactless respiration monitoring. It enhances respiratory rate estimation using conjugate multiplication for phase sanitization and adaptive multi-trace carving. Compared to three state-of-the-art methods, WiRM achieved an average reduction of 38% in respiratory rate root mean squared error. Additionally, it delivers a 178.3% improvement in average absolute correlation with the ground truth respiratory waveform.",
-                "url": "https://arxiv.org/abs/2507.23419",
-                "year": "2025"
-            },
-            {
-                "title": "ComplexBeat: Breathing Rate Estimation from Complex CSI",
-                "authors": "Zhang, Y., Wang, H., Liu, M., Chen, S.",
-                "abstract": "This research explores the use of Wi-Fi CSI to estimate breathing rates by considering the delay domain channel impulse response (CIR). The study introduces amplitude and phase offset calibration methods for CSI measured in OFDM MIMO systems, implementing a complete breathing rate estimation system to demonstrate the effectiveness of the proposed calibration and CSI extraction methods.",
-                "url": "https://arxiv.org/abs/2502.12657",
-                "year": "2025"
-            },
-            {
-                "title": "TensorBeat: Tensor Decomposition for Monitoring Multi-Person Breathing Beats with Commodity WiFi",
-                "authors": "Wang, F., Zhang, D., Wu, C., Liu, K.J.R.",
-                "abstract": "TensorBeat employs CSI phase difference data to intelligently estimate breathing rates for multiple individuals using commodity Wi-Fi devices. The system utilizes tensor decomposition techniques to handle CSI phase difference data, applying Canonical Polyadic decomposition to extract desired breathing signals. A stable signal matching algorithm and peak detection method are developed to estimate breathing rates for multiple persons.",
-                "url": "https://arxiv.org/abs/1702.02046",
-                "year": "2017"
-            },
-            {
-                "title": "FarSense: Pushing the Range Limit of WiFi-based Respiration Sensing with CSI Ratio of Two Antennas",
-                "authors": "Wang, X., Yang, C., Mao, S.",
-                "abstract": "FarSense is a real-time system capable of reliably monitoring human respiration even when the target is far from the Wi-Fi transceiver pair. It employs the ratio of CSI readings from two antennas, which cancels out noise through division, significantly increasing the sensing range. This method enables the use of phase information, addressing 'blind spots' and further extending the sensing range. Experiments demonstrate accurate respiration monitoring up to 8 meters away, increasing the sensing range by more than 100%.",
-                "url": "https://arxiv.org/abs/1907.03994",
-                "year": "2019"
-            },
-            {
-                "title": "Wi-Breath: A WiFi-Based Contactless and Real-Time Respiration Monitoring Scheme for Remote Healthcare",
-                "authors": "Liu, J., Wang, Y., Chen, Y., Yang, J., Chen, X., Cheng, J.",
-                "abstract": "Wi-Breath is a contactless and real-time respiration monitoring system based on off-the-shelf Wi-Fi devices. It monitors respiration using both the amplitude and phase difference of the Wi-Fi CSI, which are sensitive to human body micro-movements. A signal selection method based on a support vector machine algorithm is proposed to select appropriate signals from amplitude and phase difference for better respiration detection accuracy. Experimental results demonstrate an accuracy of 91.2% for respiration detection, with a 17.0% reduction in average error compared to state-of-the-art counterparts.",
-                "url": "https://pubmed.ncbi.nlm.nih.gov/35749335/",
-                "year": "2022"
-            },
-            {
-                "title": "Pulse-Fi: A Low-Cost System for Accurate Heart Rate Monitoring Using Wi-Fi Channel State Information",
-                "authors": "Chen, L., Wang, K., Zhang, R., Liu, Y.",
-                "abstract": "Pulse-Fi utilizes low-cost Wi-Fi devices and machine learning algorithms to detect variations in Wi-Fi signals caused by a beating heart. The system achieves heart rate measurement accuracy within half a beat per minute after just five seconds and can operate from up to 10 feet away without requiring the device to be worn. This technique offers a cost-effective and non-invasive alternative to traditional pulse oximeters.",
-                "url": "https://ieeexplore.ieee.org/document/12345678",
-                "year": "2023"
-            },
-            {
-                "title": "V2iFi: In-Vehicle Vital Sign Monitoring via Compact RF Sensing",
-                "authors": "Zhou, M., Wang, T., Chen, H., Liu, S.",
-                "abstract": "V2iFi is an intelligent system that performs monitoring tasks using a commercial off-the-shelf impulse radio mounted on the windshield. It reliably detects driver's vital signs under driving conditions and in the presence of passengers, allowing for the potential inference of corresponding health issues. The system demonstrates robust performance in challenging automotive environments.",
-                "url": "https://arxiv.org/abs/2110.14848",
-                "year": "2021"
-            }
-        ]
-        return wifi_csi_papers
-    
-    # General fallback papers if no specialized match - all with working links
-    fallback_papers = [
-        {
-            "title": "Attention Is All You Need",
-            "authors": "Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A.N., Kaiser, L., Polosukhin, I.",
-            "abstract": "The dominant sequence transduction models are based on complex recurrent or convolutional neural networks that include an encoder and a decoder. The best performing models also connect the encoder and decoder through an attention mechanism. We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely.",
-            "url": "https://arxiv.org/abs/1706.03762",
-            "year": "2017"
-        },
-        {
-            "title": "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
-            "authors": "Devlin, J., Chang, M.W., Lee, K., Toutanova, K.",
-            "abstract": "We introduce a new language representation model called BERT, which stands for Bidirectional Encoder Representations from Transformers. Unlike recent language representation models, BERT is designed to pre-train deep bidirectional representations from unlabeled text by jointly conditioning on both left and right context in all layers.",
-            "url": "https://arxiv.org/abs/1810.04805",
-            "year": "2018"
-        },
-        {
-            "title": "Deep Residual Learning for Image Recognition",
-            "authors": "He, K., Zhang, X., Ren, S., Sun, J.",
-            "abstract": "Deeper neural networks are more difficult to train. We present a residual learning framework to ease the training of networks that are substantially deeper than those used previously. We explicitly reformulate the layers as learning residual functions with reference to the layer inputs, instead of learning unreferenced functions.",
-            "url": "https://arxiv.org/abs/1512.03385",
-            "year": "2015"
-        },
-        {
-            "title": "Generative Adversarial Networks",
-            "authors": "Goodfellow, I., Pouget-Abadie, J., Mirza, M., Xu, B., Warde-Farley, D., Ozair, S., Courville, A., Bengio, Y.",
-            "abstract": "We propose a new framework for estimating generative models via an adversarial process, in which we simultaneously train two models: a generative model G that captures the data distribution, and a discriminative model D that estimates the probability that a sample came from the training data rather than G.",
-            "url": "https://arxiv.org/abs/1406.2661",
-            "year": "2014"
-        },
-        {
-            "title": "Deep Learning",
-            "authors": "LeCun, Y., Bengio, Y., Hinton, G.",
-            "abstract": "Deep learning allows computational models that are composed of multiple processing layers to learn representations of data with multiple levels of abstraction. These methods have dramatically improved the state-of-the-art in speech recognition, visual object recognition, object detection and many other domains.",
-            "url": "https://www.nature.com/articles/nature14539",
-            "year": "2015"
-        },
-        {
-            "title": "ResNet: Deep Residual Learning for Image Recognition",
-            "authors": "He, K., Zhang, X., Ren, S., Sun, J.",
-            "abstract": "We present a residual learning framework to ease the training of networks that are substantially deeper than those used previously. We explicitly reformulate the layers as learning residual functions with reference to the layer inputs, instead of learning unreferenced functions.",
-            "url": "https://arxiv.org/abs/1512.03385",
-            "year": "2016"
-        },
-        {
-            "title": "ImageNet Classification with Deep Convolutional Neural Networks",
-            "authors": "Krizhevsky, A., Sutskever, I., Hinton, G.E.",
-            "abstract": "We trained a large, deep convolutional neural network to classify the 1.2 million high-resolution images in the ImageNet LSVRC-2010 contest into the 1000 different classes. On the test data, we achieved top-1 and top-5 error rates of 37.5% and 17.0% which is considerably better than the previous state-of-the-art.",
-            "url": "https://papers.nips.cc/paper/2012/hash/c399862d3b9d6b76c8436e924a68c45b-Abstract.html",
-            "year": "2012"
-        },
-        {
-            "title": "Long Short-Term Memory",
-            "authors": "Hochreiter, S., Schmidhuber, J.",
-            "abstract": "Learning to store information over extended time intervals by recurrent backpropagation takes a very long time, mostly because of insufficient, decaying error backflow. We briefly review Hochreiter's (1991) analysis of this problem, then address it by introducing a novel, efficient, gradient based method called long short-term memory (LSTM).",
-            "url": "https://www.bioinf.jku.at/publications/older/2604.pdf",
-            "year": "1997"
-        }
-    ]
-    
-    return fallback_papers
+    # If all API searches fail, return empty list - NO HARDCODED FALLBACKS
+    logger.warning("All API searches failed - returning empty results")
+    return []
 
 @app.route('/api/search-papers', methods=['POST'])
 def search_papers():
@@ -643,73 +526,64 @@ def search_papers():
         # FAST API-BASED SEARCH
         logger.info(f"Starting fast paper search for: {topic}")
         
-        # Check if this is a WiFi CSI related query first
-        is_wifi_csi_query = any(keyword in topic.lower() for keyword in [
-            'wifi', 'csi', 'heart', 'breathing', 'vital', 'signs', 'wireless', 'sensing', 
-            'hr', 'br', 'respiration', 'contactless', 'monitoring', 'channel state'
-        ])
-        
-        if is_wifi_csi_query:
-            logger.info("Detected WiFi CSI query - using specialized papers")
-            papers = get_fallback_papers(topic)  # This will return WiFi CSI papers
-        else:
-            # Use robust search for all queries
-            papers = []
-            try:
-                # Use robust search strategy
-                logger.info("Using robust search strategy")
-                all_papers = search_papers_robust(topic, 12)
-                logger.info(f"Robust search returned {len(all_papers)} papers")
+        # Use robust search for ALL queries - no hardcoded papers
+        papers = []
+        try:
+            # Use robust search strategy
+            logger.info("Using robust search strategy")
+            all_papers = search_papers_robust(topic, 12)
+            logger.info(f"Robust search returned {len(all_papers)} papers")
+            
+            if all_papers:
+                # Deduplicate based on title similarity
+                seen_titles = set()
+                unique_papers = []
+                for paper in all_papers:
+                    title_key = paper['title'].lower().replace(' ', '').replace('-', '').replace('_', '')
+                    if title_key not in seen_titles:
+                        seen_titles.add(title_key)
+                        unique_papers.append(paper)
                 
-                if all_papers:
-                    # Deduplicate based on title similarity
-                    seen_titles = set()
-                    unique_papers = []
-                    for paper in all_papers:
-                        title_key = paper['title'].lower().replace(' ', '').replace('-', '').replace('_', '')
-                        if title_key not in seen_titles:
-                            seen_titles.add(title_key)
-                            unique_papers.append(paper)
-                    
-                    # Use advanced relevance scoring
-                    logger.info(f"Scoring {len(unique_papers)} papers with advanced relevance algorithm")
-                    for paper in unique_papers:
-                        paper['relevance_score'] = advanced_relevance_scoring(paper, topic, search_queries)
-                    
-                    # Sort by relevance score (highest first)
-                    unique_papers.sort(key=lambda x: x.get('relevance_score', 0), reverse=True)
-                    
-                    # Check if this is an author search
-                    is_author_search = any(pattern in topic.lower() for pattern in ['author:', 'by ', 'written by', 'papers by']) or any(word in topic.lower() for word in ['bhatia', 'smith', 'johnson', 'garcia', 'miller', 'davis', 'rodriguez', 'martinez', 'hernandez', 'lopez'])
-                    
-                    if is_author_search:
-                        # For author searches, only return papers with exact author matches
-                        author_matched_papers = [p for p in unique_papers if p.get('relevance_score', 0) >= 80]  # High threshold for author matches
-                        if author_matched_papers:
-                            papers = author_matched_papers[:5]
-                            logger.info(f"Found {len(papers)} papers by exact author match")
-                        else:
-                            papers = []
-                            logger.info("No papers found by exact author match")
+                # Use advanced relevance scoring
+                search_queries = expand_search_query(topic)
+                logger.info(f"Scoring {len(unique_papers)} papers with advanced relevance algorithm")
+                for paper in unique_papers:
+                    paper['relevance_score'] = advanced_relevance_scoring(paper, topic, search_queries)
+                
+                # Sort by relevance score (highest first)
+                unique_papers.sort(key=lambda x: x.get('relevance_score', 0), reverse=True)
+                
+                # Check if this is an author search
+                is_author_search = any(pattern in topic.lower() for pattern in ['author:', 'by ', 'written by', 'papers by']) or any(word in topic.lower() for word in ['bhatia', 'smith', 'johnson', 'garcia', 'miller', 'davis', 'rodriguez', 'martinez', 'hernandez', 'lopez'])
+                
+                if is_author_search:
+                    # For author searches, only return papers with exact author matches
+                    author_matched_papers = [p for p in unique_papers if p.get('relevance_score', 0) >= 80]  # High threshold for author matches
+                    if author_matched_papers:
+                        papers = author_matched_papers[:5]
+                        logger.info(f"Found {len(papers)} papers by exact author match")
                     else:
-                        # For non-author searches, use normal filtering
-                        relevant_papers = [p for p in unique_papers if p.get('relevance_score', 0) >= 15]
-                        
-                        if relevant_papers:
-                            papers = relevant_papers[:8]  # Return top 8 most relevant papers
-                            logger.info(f"Found {len(papers)} highly relevant papers from APIs")
-                        else:
-                            # If no highly relevant papers, return top papers even with lower scores
-                            papers = unique_papers[:5]
-                            logger.info(f"Found {len(papers)} papers (some with lower relevance scores)")
+                        papers = []
+                        logger.info("No papers found by exact author match")
                 else:
-                    logger.info("No papers found from APIs, using fallback")
-                    papers = get_fallback_papers(topic)
+                    # For non-author searches, use normal filtering
+                    relevant_papers = [p for p in unique_papers if p.get('relevance_score', 0) >= 15]
                     
-            except Exception as e:
-                logger.error(f"Fast API search failed: {e}")
-                logger.info("Using fallback papers due to API error")
-                papers = get_fallback_papers(topic)
+                    if relevant_papers:
+                        papers = relevant_papers[:8]  # Return top 8 most relevant papers
+                        logger.info(f"Found {len(papers)} highly relevant papers from APIs")
+                    else:
+                        # If no highly relevant papers, return top papers even with lower scores
+                        papers = unique_papers[:5]
+                        logger.info(f"Found {len(papers)} papers (some with lower relevance scores)")
+            else:
+                logger.info("No papers found from APIs")
+                papers = []
+                    
+        except Exception as e:
+            logger.error(f"Fast API search failed: {e}")
+            logger.info("No fallback papers - returning empty results")
+            papers = []
         
         logger.info(f"Found {len(papers)} papers")
         for i, paper in enumerate(papers):
