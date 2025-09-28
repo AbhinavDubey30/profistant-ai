@@ -286,47 +286,82 @@ const Home = ({ readingList, addToReadingList, settings, setSettings }) => {
 
               {papers.length > 0 && (
                 <div className="mt-3">
-                  <h5 className="mb-3">Found Papers:</h5>
+                  <div className="d-flex justify-content-between align-items-center mb-3">
+                    <h5 className="mb-0">Found Papers:</h5>
+                    <div className="d-flex align-items-center gap-2">
+                      <small className="text-muted">
+                        Sorted by relevance (most relevant first)
+                      </small>
+                    </div>
+                  </div>
                   <div className="papers-container">
-                    {papers.map((paper, index) => (
-                      <Card key={index} className="paper-card mb-3">
-                        <Card.Body className="p-3">
-                          <h6 className="card-title mb-2">{paper.title}</h6>
-                          <p className="text-muted mb-2 small">
-                            <strong>Authors:</strong> {paper.authors}
-                          </p>
-                          <p className="card-text small mb-3">{paper.abstract}</p>
-                          <div className="d-flex gap-2 flex-wrap">
-                            <Button 
-                              variant="outline-primary" 
-                              size="sm"
-                              onClick={() => handleSummarize(paper)}
-                              disabled={loading}
-                            >
-                              Summarize
-                            </Button>
-                            <Button 
-                              variant="outline-success" 
-                              size="sm"
-                              onClick={() => handleAddToReadingList(paper)}
-                            >
-                              <FaPlus className="me-1" />
-                              Add to List
-                            </Button>
-                            {paper.url && paper.url !== '#' && (
+                    {papers.map((paper, index) => {
+                      const relevanceScore = paper.relevance_score || 0;
+                      const getRelevanceColor = (score) => {
+                        if (score >= 70) return 'success';
+                        if (score >= 50) return 'warning';
+                        if (score >= 30) return 'info';
+                        return 'secondary';
+                      };
+                      const getRelevanceLabel = (score) => {
+                        if (score >= 70) return '🔥 Highly Relevant';
+                        if (score >= 50) return '✅ Very Relevant';
+                        if (score >= 30) return '📚 Relevant';
+                        return '📖 Somewhat Relevant';
+                      };
+                      
+                      return (
+                        <Card key={index} className="paper-card mb-3">
+                          <Card.Body className="p-3">
+                            <div className="d-flex justify-content-between align-items-start mb-2">
+                              <h6 className="card-title mb-0 flex-grow-1">{paper.title}</h6>
+                              {paper.relevance_score && (
+                                <span className={`badge bg-${getRelevanceColor(relevanceScore)} ms-2`}>
+                                  {getRelevanceLabel(relevanceScore)} ({relevanceScore.toFixed(0)}%)
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-muted mb-2 small">
+                              <strong>Authors:</strong> {paper.authors}
+                              {paper.year && paper.year !== 'Unknown' && (
+                                <span className="ms-2">
+                                  <strong>Year:</strong> {paper.year}
+                                </span>
+                              )}
+                            </p>
+                            <p className="card-text small mb-3">{paper.abstract}</p>
+                            <div className="d-flex gap-2 flex-wrap">
                               <Button 
-                                variant="outline-info" 
+                                variant="outline-primary" 
                                 size="sm"
-                                href={paper.url}
-                                target="_blank"
+                                onClick={() => handleSummarize(paper)}
+                                disabled={loading}
                               >
-                                View Paper
+                                Summarize
                               </Button>
-                            )}
-                          </div>
-                        </Card.Body>
-                      </Card>
-                    ))}
+                              <Button 
+                                variant="outline-success" 
+                                size="sm"
+                                onClick={() => handleAddToReadingList(paper)}
+                              >
+                                <FaPlus className="me-1" />
+                                Add to List
+                              </Button>
+                              {paper.url && paper.url !== '#' && (
+                                <Button 
+                                  variant="outline-info" 
+                                  size="sm"
+                                  href={paper.url}
+                                  target="_blank"
+                                >
+                                  View Paper
+                                </Button>
+                              )}
+                            </div>
+                          </Card.Body>
+                        </Card>
+                      );
+                    })}
                   </div>
                 </div>
               )}

@@ -6,6 +6,9 @@ import time
 import random
 import os
 import logging
+import re
+import math
+from collections import Counter
 from scholarly._navigator import MaxTriesExceededException
 
 # Configure logging
@@ -28,6 +31,201 @@ except Exception as e:
 # Initialize scholarly with default settings
 scholarly.set_timeout(10)  # Faster timeout for quick fallback
 logger.info("Scholarly library initialized with 30s timeout")
+
+# Advanced relevance scoring system
+def advanced_relevance_scoring(paper, original_topic, query_variations=None):
+    """
+    Advanced relevance scoring system that considers multiple factors:
+    - Semantic similarity
+    - Keyword density and position
+    - Paper recency
+    - Abstract quality
+    - Title relevance
+    """
+    if query_variations is None:
+        query_variations = [original_topic]
+    
+    score = 0
+    title_lower = paper.get('title', '').lower()
+    abstract_lower = paper.get('abstract', '').lower()
+    topic_lower = original_topic.lower()
+    year = paper.get('year', 'Unknown')
+    
+    # 1. EXACT MATCH SCORING (40% weight)
+    exact_score = 0
+    
+    # Exact topic match in title (highest priority)
+    if topic_lower in title_lower:
+        exact_score += 50
+    
+    # Check for exact matches in query variations
+    for variation in query_variations:
+        if variation.lower() in title_lower:
+            exact_score += 30
+        if variation.lower() in abstract_lower:
+            exact_score += 10
+    
+    # 2. KEYWORD DENSITY SCORING (25% weight)
+    keyword_score = 0
+    
+    # Extract meaningful words from topic (remove common words)
+    stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'can', 'this', 'that', 'these', 'those'}
+    
+    topic_words = [word for word in re.findall(r'\b\w+\b', topic_lower) if word not in stop_words and len(word) > 2]
+    
+    # Title keyword scoring with position weighting
+    title_words = re.findall(r'\b\w+\b', title_lower)
+    for i, word in enumerate(title_words):
+        if word in topic_words:
+            # Position matters - earlier words get higher scores
+            position_weight = max(0.1, 1.0 - (i / len(title_words)) * 0.8)
+            keyword_score += 5 * position_weight
+    
+    # Abstract keyword scoring
+    abstract_words = re.findall(r'\b\w+\b', abstract_lower)
+    word_freq = Counter(abstract_words)
+    total_words = len(abstract_words)
+    
+    for word in topic_words:
+        if word in word_freq:
+            # TF-IDF-like scoring
+            tf = word_freq[word] / total_words
+            keyword_score += 3 * tf * 10  # Scale up for visibility
+    
+    # 3. SEMANTIC SIMILARITY SCORING (20% weight)
+    semantic_score = 0
+    
+    # Check for related terms and synonyms
+    related_terms = {
+        'wifi': ['wireless', 'wi-fi', '802.11', 'rf', 'radio'],
+        'csi': ['channel state information', 'channel', 'signal'],
+        'heart': ['cardiac', 'pulse', 'heartbeat', 'hr', 'bpm'],
+        'breathing': ['respiration', 'respiratory', 'breath', 'br', 'lung'],
+        'vital': ['health', 'medical', 'physiological', 'biometric'],
+        'monitoring': ['sensing', 'detection', 'measurement', 'tracking'],
+        'contactless': ['non-contact', 'remote', 'wireless', 'touchless'],
+        'machine learning': ['ml', 'ai', 'artificial intelligence', 'neural', 'deep learning'],
+        'deep learning': ['neural network', 'cnn', 'rnn', 'transformer', 'bert'],
+        'computer vision': ['cv', 'image', 'visual', 'optical', 'camera'],
+        'natural language': ['nlp', 'text', 'language', 'linguistic', 'speech']
+    }
+    
+    for topic_word in topic_words:
+        if topic_word in related_terms:
+            for related_term in related_terms[topic_word]:
+                if related_term in title_lower:
+                    semantic_score += 8
+                if related_term in abstract_lower:
+                    semantic_score += 3
+    
+    # 4. RECENCY SCORING (10% weight)
+    recency_score = 0
+    try:
+        if year != 'Unknown' and year.isdigit():
+            current_year = 2024
+            paper_year = int(year)
+            age = current_year - paper_year
+            
+            if age <= 1:
+                recency_score = 20
+            elif age <= 3:
+                recency_score = 15
+            elif age <= 5:
+                recency_score = 10
+            elif age <= 10:
+                recency_score = 5
+            else:
+                recency_score = 0
+    except:
+        recency_score = 0
+    
+    # 5. ABSTRACT QUALITY SCORING (5% weight)
+    quality_score = 0
+    
+    # Longer abstracts are generally better (up to a point)
+    abstract_length = len(abstract_lower.split())
+    if 50 <= abstract_length <= 300:
+        quality_score += 10
+    elif 20 <= abstract_length < 50:
+        quality_score += 5
+    
+    # Check for technical terms and methodology indicators
+    technical_indicators = ['method', 'approach', 'algorithm', 'technique', 'framework', 'model', 'system', 'experiment', 'evaluation', 'performance', 'accuracy', 'result', 'conclusion']
+    tech_count = sum(1 for indicator in technical_indicators if indicator in abstract_lower)
+    quality_score += min(tech_count * 2, 10)
+    
+    # 6. TITLE RELEVANCE BONUS
+    title_bonus = 0
+    
+    # Check if title contains key research terms
+    research_terms = ['novel', 'new', 'improved', 'enhanced', 'advanced', 'efficient', 'effective', 'robust', 'accurate', 'precise']
+    for term in research_terms:
+        if term in title_lower:
+            title_bonus += 2
+    
+    # Check for methodology indicators in title
+    method_terms = ['using', 'based on', 'via', 'through', 'with', 'for', 'detection', 'estimation', 'monitoring', 'analysis']
+    for term in method_terms:
+        if term in title_lower:
+            title_bonus += 1
+    
+    # Calculate final weighted score
+    final_score = (
+        exact_score * 0.40 +
+        keyword_score * 0.25 +
+        semantic_score * 0.20 +
+        recency_score * 0.10 +
+        quality_score * 0.05 +
+        title_bonus
+    )
+    
+    # Normalize score to 0-100 range
+    final_score = min(100, max(0, final_score))
+    
+    return final_score
+
+def expand_search_query(topic):
+    """
+    Expand search query with related terms and synonyms for better results
+    """
+    base_query = topic.lower()
+    expanded_queries = [topic]  # Always include original
+    
+    # Define query expansion rules
+    expansions = {
+        'wifi': ['wireless', 'wi-fi', '802.11', 'rf sensing'],
+        'csi': ['channel state information', 'channel', 'signal'],
+        'heart': ['cardiac', 'pulse', 'heartbeat', 'hr'],
+        'breathing': ['respiration', 'respiratory', 'breath', 'br'],
+        'monitoring': ['sensing', 'detection', 'measurement'],
+        'contactless': ['non-contact', 'remote', 'wireless'],
+        'machine learning': ['ml', 'ai', 'artificial intelligence'],
+        'deep learning': ['neural network', 'cnn', 'rnn'],
+        'computer vision': ['cv', 'image processing', 'visual'],
+        'natural language': ['nlp', 'text processing', 'language']
+    }
+    
+    # Generate expanded queries
+    words = re.findall(r'\b\w+\b', base_query)
+    for word in words:
+        if word in expansions:
+            for expansion in expansions[word]:
+                expanded_query = base_query.replace(word, expansion)
+                if expanded_query not in expanded_queries:
+                    expanded_queries.append(expanded_query)
+    
+    # Create combination queries
+    if len(words) > 1:
+        for i, word in enumerate(words):
+            if word in expansions:
+                for expansion in expansions[word]:
+                    new_words = words.copy()
+                    new_words[i] = expansion
+                    combination = ' '.join(new_words)
+                    if combination not in expanded_queries:
+                        expanded_queries.append(combination)
+    
+    return expanded_queries[:5]  # Limit to 5 variations
 
 def search_papers_with_retry(topic, max_retries=1, timeout=10):
     """
@@ -72,15 +270,17 @@ def search_papers_with_retry(topic, max_retries=1, timeout=10):
 
 def search_arxiv_api(topic, max_results=5):
     """
-    Search arXiv API for real papers
+    Search arXiv API for real papers with improved query handling
     """
     try:
         import requests
         import xml.etree.ElementTree as ET
         
-        url = f"https://export.arxiv.org/api/query?search_query=all:{topic}&start=0&max_results={max_results}&sortBy=relevance&sortOrder=descending"
+        # Use more specific search query format for better results
+        search_query = f"all:{topic}"
+        url = f"https://export.arxiv.org/api/query?search_query={search_query}&start=0&max_results={max_results}&sortBy=relevance&sortOrder=descending"
         logger.info(f"Searching arXiv with URL: {url}")
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, timeout=15)
         
         if response.status_code == 200:
             root = ET.fromstring(response.content)
@@ -122,14 +322,15 @@ def search_arxiv_api(topic, max_results=5):
 
 def search_semantic_scholar_api(topic, max_results=5):
     """
-    Search Semantic Scholar API for real papers
+    Search Semantic Scholar API for real papers with improved query handling
     """
     try:
         import requests
         
-        url = f"https://api.semanticscholar.org/graph/v1/paper/search?query={topic}&limit={max_results}&fields=title,authors,abstract,url,year"
+        # Use more specific search parameters for better results
+        url = f"https://api.semanticscholar.org/graph/v1/paper/search?query={topic}&limit={max_results}&fields=title,authors,abstract,url,year,citationCount,isOpenAccess&sort=relevance"
         logger.info(f"Searching Semantic Scholar with URL: {url}")
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, timeout=15)
         
         if response.status_code == 200:
             data = response.json()
@@ -164,26 +365,18 @@ def get_fallback_papers(topic):
     
     # Try real API searches first with multiple query variations
     try:
-        # Create multiple search queries for better results
-        search_queries = [topic]
-        
-        # Add specialized queries for WiFi CSI and vital signs
-        if any(keyword in topic.lower() for keyword in ['wifi', 'csi', 'heart', 'breathing', 'vital', 'signs']):
-            search_queries.extend([
-                f"WiFi CSI heart rate breathing rate monitoring",
-                f"channel state information vital signs",
-                f"wireless sensing heart rate respiration",
-                f"contactless monitoring WiFi CSI",
-                f"WiFi sensing heart rate breathing rate"
-            ])
+        # Expand search queries for better coverage
+        search_queries = expand_search_query(topic)
+        logger.info(f"Expanded search queries: {search_queries}")
         
         all_papers = []
         
         # Search with each query variation
         for query in search_queries[:3]:  # Limit to 3 queries to avoid rate limiting
             try:
-                arxiv_papers = search_arxiv_api(query, 2)
-                semantic_papers = search_semantic_scholar_api(query, 2)
+                logger.info(f"Searching with query: {query}")
+                arxiv_papers = search_arxiv_api(query, 3)
+                semantic_papers = search_semantic_scholar_api(query, 3)
                 all_papers.extend(arxiv_papers + semantic_papers)
                 time.sleep(1)  # Small delay between queries
             except Exception as e:
@@ -200,31 +393,20 @@ def get_fallback_papers(topic):
                     seen_titles.add(title_key)
                     unique_papers.append(paper)
             
-            # Sort by relevance to the original topic
-            def calculate_relevance(paper, original_topic):
-                score = 0
-                title_lower = paper['title'].lower()
-                abstract_lower = paper['abstract'].lower()
-                topic_lower = original_topic.lower()
-                
-                # Exact topic match in title gets highest score
-                if topic_lower in title_lower:
-                    score += 10
-                
-                # Topic words in title
-                topic_words = topic_lower.split()
-                for word in topic_words:
-                    if len(word) > 3 and word in title_lower:
-                        score += 3
-                    if len(word) > 3 and word in abstract_lower:
-                        score += 1
-                
-                return score
+            # Use advanced relevance scoring
+            logger.info(f"Scoring {len(unique_papers)} papers with advanced relevance algorithm")
+            for paper in unique_papers:
+                paper['relevance_score'] = advanced_relevance_scoring(paper, topic, search_queries)
             
-            # Sort by relevance and return top 5
-            unique_papers.sort(key=lambda x: calculate_relevance(x, topic), reverse=True)
-            return unique_papers[:5]
-        
+            # Sort by relevance score (highest first)
+            unique_papers.sort(key=lambda x: x.get('relevance_score', 0), reverse=True)
+            
+            # Filter out papers with very low relevance scores
+            relevant_papers = [p for p in unique_papers if p.get('relevance_score', 0) >= 15]
+            
+            logger.info(f"Found {len(relevant_papers)} highly relevant papers")
+            return relevant_papers[:8]  # Return top 8 most relevant papers
+    
     except Exception as e:
         logger.error(f"API search failed: {e}")
     
@@ -360,20 +542,21 @@ def search_papers():
             logger.info("Detected WiFi CSI query - using specialized papers")
             papers = get_fallback_papers(topic)  # This will return WiFi CSI papers
         else:
-            # Try real API searches for non-WiFi queries
+            # Try real API searches for non-WiFi queries with improved relevance
             papers = []
             try:
-                # Search with multiple query variations for better results
-                search_queries = [topic]
+                # Expand search queries for better coverage
+                search_queries = expand_search_query(topic)
+                logger.info(f"Expanded search queries: {search_queries}")
                 
                 all_papers = []
                 
                 # Search with each query variation
-                for query in search_queries[:2]:  # Limit to 2 queries to avoid rate limiting
+                for query in search_queries[:3]:  # Limit to 3 queries to avoid rate limiting
                     try:
                         logger.info(f"Searching with query: {query}")
-                        arxiv_papers = search_arxiv_api(query, 3)
-                        semantic_papers = search_semantic_scholar_api(query, 3)
+                        arxiv_papers = search_arxiv_api(query, 4)
+                        semantic_papers = search_semantic_scholar_api(query, 4)
                         all_papers.extend(arxiv_papers + semantic_papers)
                         time.sleep(0.5)  # Small delay between queries
                     except Exception as e:
@@ -390,31 +573,24 @@ def search_papers():
                             seen_titles.add(title_key)
                             unique_papers.append(paper)
                     
-                    # Sort by relevance to the original topic
-                    def calculate_relevance(paper, original_topic):
-                        score = 0
-                        title_lower = paper['title'].lower()
-                        abstract_lower = paper['abstract'].lower()
-                        topic_lower = original_topic.lower()
-                        
-                        # Exact topic match in title gets highest score
-                        if topic_lower in title_lower:
-                            score += 10
-                        
-                        # Topic words in title
-                        topic_words = topic_lower.split()
-                        for word in topic_words:
-                            if len(word) > 3 and word in title_lower:
-                                score += 3
-                            if len(word) > 3 and word in abstract_lower:
-                                score += 1
-                        
-                        return score
+                    # Use advanced relevance scoring
+                    logger.info(f"Scoring {len(unique_papers)} papers with advanced relevance algorithm")
+                    for paper in unique_papers:
+                        paper['relevance_score'] = advanced_relevance_scoring(paper, topic, search_queries)
                     
-                    # Sort by relevance and return top 5
-                    unique_papers.sort(key=lambda x: calculate_relevance(x, topic), reverse=True)
-                    papers = unique_papers[:5]
-                    logger.info(f"Found {len(papers)} relevant papers from APIs")
+                    # Sort by relevance score (highest first)
+                    unique_papers.sort(key=lambda x: x.get('relevance_score', 0), reverse=True)
+                    
+                    # Filter out papers with very low relevance scores
+                    relevant_papers = [p for p in unique_papers if p.get('relevance_score', 0) >= 20]
+                    
+                    if relevant_papers:
+                        papers = relevant_papers[:8]  # Return top 8 most relevant papers
+                        logger.info(f"Found {len(papers)} highly relevant papers from APIs")
+                    else:
+                        # If no highly relevant papers, return top papers even with lower scores
+                        papers = unique_papers[:5]
+                        logger.info(f"Found {len(papers)} papers (some with lower relevance scores)")
                 else:
                     logger.info("No papers found from APIs, using fallback")
                     papers = get_fallback_papers(topic)
@@ -426,13 +602,34 @@ def search_papers():
         
         logger.info(f"Found {len(papers)} papers")
         for i, paper in enumerate(papers):
-            logger.info(f"Paper {i+1}: {paper.get('title', 'No title')}")
+            relevance_score = paper.get('relevance_score', 'N/A')
+            logger.info(f"Paper {i+1}: {paper.get('title', 'No title')} (Relevance: {relevance_score})")
         
+        # Add relevance information to response
         if len(papers) > 0:
+            # Calculate average relevance score
+            scores = [p.get('relevance_score', 0) for p in papers if isinstance(p.get('relevance_score'), (int, float))]
+            avg_score = sum(scores) / len(scores) if scores else 0
+            
+            # Determine quality message based on average relevance
+            if avg_score >= 70:
+                quality_msg = "🔥 Highly relevant papers found!"
+            elif avg_score >= 50:
+                quality_msg = "✅ Good quality papers found!"
+            elif avg_score >= 30:
+                quality_msg = "📚 Relevant papers found!"
+            else:
+                quality_msg = "📖 Some relevant papers found!"
+            
             return jsonify({
                 'papers': papers,
-                'message': f'🎉 Found {len(papers)} relevant papers!',
-                'fallback': False
+                'message': f'{quality_msg} Found {len(papers)} papers (Avg relevance: {avg_score:.1f}%)',
+                'fallback': False,
+                'relevance_stats': {
+                    'average_score': round(avg_score, 1),
+                    'total_papers': len(papers),
+                    'high_relevance': len([p for p in papers if p.get('relevance_score', 0) >= 70])
+                }
             })
         else:
             return jsonify({
