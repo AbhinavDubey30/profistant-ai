@@ -63,10 +63,11 @@ export const searchPapers = async (topic, settings) => {
   }
 };
 
-export const summarizePaper = async (abstract) => {
+export const summarizePaper = async (abstract, title = '') => {
   try {
     const response = await api.post('/api/summarize', {
-      abstract
+      abstract,
+      title
     });
     return response.data.summary;
   } catch (error) {
@@ -74,6 +75,21 @@ export const summarizePaper = async (abstract) => {
       throw new Error(error.response.data.error);
     }
     throw new Error('Failed to generate summary. Please try again.');
+  }
+};
+
+export const getResearchGaps = async (abstract, title = '') => {
+  try {
+    const response = await api.post('/api/research-gaps', {
+      abstract,
+      title
+    });
+    return response.data.research_gaps;
+  } catch (error) {
+    if (error.response?.data?.error) {
+      throw new Error(error.response.data.error);
+    }
+    throw new Error('Failed to generate research gaps. Please try again.');
   }
 };
 

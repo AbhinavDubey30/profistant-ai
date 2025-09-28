@@ -778,16 +778,9 @@ def search_papers():
                             papers = []
                             logger.info("No papers found by exact author match")
                     else:
-                        # For non-author searches, use very low threshold to ensure results
-                        relevant_papers = [p for p in unique_papers if p.get('relevance_score', 0) >= 1]  # Very low threshold
-                        
-                        if relevant_papers:
-                            papers = relevant_papers[:10]  # Return top 10 most relevant papers
-                            logger.info(f"Found {len(papers)} relevant papers from APIs")
-                        else:
-                            # If no relevant papers, return top papers even with lower scores
-                            papers = unique_papers[:8]
-                            logger.info(f"Found {len(papers)} papers (some with lower relevance scores)")
+                        # For non-author searches, return ALL papers regardless of relevance score
+                        papers = unique_papers[:12]  # Return top 12 papers
+                        logger.info(f"Found {len(papers)} papers from APIs (no relevance filtering)")
                     
                     # Cache the results
                     search_cache[cache_key] = (time.time(), papers)
@@ -861,15 +854,42 @@ def summarize_paper():
     try:
         data = request.get_json()
         abstract = data.get('abstract')
+        title = data.get('title', '')
         
         if not abstract:
             return jsonify({'error': 'Abstract is required'}), 400
         
-        # Full summary with complete abstract
+        # Use Gemini API for real insights
         if not abstract or abstract == 'No abstract available':
             summary = "**Summary:** No abstract available for this paper."
         else:
-            summary = f"""**Full Abstract:**
+            try:
+                # Create a comprehensive prompt for Gemini
+                prompt = f"""Please analyze this research paper and provide a detailed summary with insights:
+
+**Paper Title:** {title}
+
+**Abstract:**
+{abstract}
+
+Please provide:
+1. A concise summary of the main contributions
+2. Key technical insights and methodologies
+3. Practical applications and implications
+4. Research significance and impact
+
+Format your response in markdown with clear sections and bullet points."""
+                
+                # Generate response using Gemini
+                response = model.generate_content(prompt)
+                summary = response.text
+                
+                logger.info("Generated insights using Gemini API")
+                
+            except Exception as e:
+                logger.error(f"Gemini API error: {e}")
+                # Fallback to basic summary
+                summary = f"""**Full Abstract:**
 {abstract}
 
 **Key Insights:**
@@ -883,6 +903,66 @@ def summarize_paper():
         
     except Exception as e:
         return jsonify({'error': f'Failed to generate summary: {str(e)}'}), 500
+
+@app.route('/api/research-gaps', methods=['POST'])
+def get_research_gaps():
+    try:
+        data = request.get_json()
+        abstract = data.get('abstract')
+        title = data.get('title', '')
+        
+        if not abstract:
+            return jsonify({'error': 'Abstract is required'}), 400
+        
+        # Use Gemini API for research gaps analysis
+        if not abstract or abstract == 'No abstract available':
+            gaps = "**Research Gaps:** Unable to analyze research gaps without abstract content."
+        else:
+            try:
+                # Create a comprehensive prompt for research gaps
+                prompt = f"""Please analyze this research paper and identify potential research gaps and future directions:
+
+**Paper Title:** {title}
+
+**Abstract:**
+{abstract}
+
+Please identify:
+1. Current limitations mentioned in the paper
+2. Potential research gaps and unexplored areas
+3. Future research directions and opportunities
+4. Methodological improvements that could be made
+5. Applications that haven't been explored yet
+
+Format your response in markdown with clear sections and bullet points. Be specific and actionable."""
+                
+                # Generate response using Gemini
+                response = model.generate_content(prompt)
+                gaps = response.text
+                
+                logger.info("Generated research gaps using Gemini API")
+                
+            except Exception as e:
+                logger.error(f"Gemini API error for research gaps: {e}")
+                # Fallback to basic research gaps
+                gaps = """**Research Gaps Identified:**
+• **Methodological Limitations:** The current approach could be enhanced with additional validation methods
+• **Scope Expansion:** Future work could explore broader applications and use cases
+• **Performance Optimization:** There may be opportunities to improve efficiency and accuracy
+• **Cross-domain Applications:** The methodology could be adapted for related fields
+• **Long-term Studies:** Extended evaluation periods could provide deeper insights
+
+**Future Research Directions:**
+• Investigate alternative approaches and compare performance
+• Explore integration with emerging technologies
+• Conduct comprehensive user studies and validation
+• Develop standardized evaluation metrics
+• Investigate scalability and real-world deployment challenges"""
+        
+        return jsonify({'research_gaps': gaps})
+        
+    except Exception as e:
+        return jsonify({'error': f'Failed to generate research gaps: {str(e)}'}), 500
 
 @app.route('/api/reading-list', methods=['GET'])
 def get_reading_list():

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Form, Button, Alert, ProgressBar, Spinner } from 'react-bootstrap';
 import { FaSearch, FaBookOpen, FaPlus, FaCog, FaTrash } from 'react-icons/fa';
-import { searchPapers, summarizePaper, testConnection } from '../services/api';
+import { searchPapers, summarizePaper, getResearchGaps, testConnection } from '../services/api';
 import { getInstantSummary } from '../utils/instantSearch';
 
 const Home = ({ readingList, addToReadingList, settings, setSettings }) => {
@@ -96,22 +96,45 @@ const Home = ({ readingList, addToReadingList, settings, setSettings }) => {
 
   const handleSummarize = async (paper) => {
     setLoading(true);
-    setStatusText('📖 Generating full summary...');
+    setStatusText('📖 Generating AI-powered insights...');
     
     try {
-      // Generate full summary with complete abstract
-      await new Promise(resolve => setTimeout(resolve, 300));
-      const summary = getInstantSummary(paper.abstract);
+      // Use real Gemini API for insights
+      const summary = await summarizePaper(paper.abstract, paper.title);
       
       // Set the expanded summary to show inline
       setExpandedSummary({
         paper: paper,
-        summary: summary
+        summary: summary,
+        researchGaps: null // Will be loaded when user clicks research gaps button
       });
       
-      setSuccess(`📖 Full summary generated for "${paper.title}"`);
+      setSuccess(`📖 AI-powered insights generated for "${paper.title}"`);
     } catch (err) {
-      setError('Failed to generate summary');
+      setError('Failed to generate insights: ' + err.message);
+    } finally {
+      setLoading(false);
+      setStatusText('');
+    }
+  };
+
+  const handleResearchGaps = async (paper) => {
+    setLoading(true);
+    setStatusText('🔍 Analyzing research gaps...');
+    
+    try {
+      // Use real Gemini API for research gaps
+      const researchGaps = await getResearchGaps(paper.abstract, paper.title);
+      
+      // Update the expanded summary with research gaps
+      setExpandedSummary(prev => ({
+        ...prev,
+        researchGaps: researchGaps
+      }));
+      
+      setSuccess(`🔍 Research gaps analyzed for "${paper.title}"`);
+    } catch (err) {
+      setError('Failed to analyze research gaps: ' + err.message);
     } finally {
       setLoading(false);
       setStatusText('');
@@ -225,7 +248,7 @@ const Home = ({ readingList, addToReadingList, settings, setSettings }) => {
                 <Card className="mt-3">
                   <Card.Body>
                     <div className="d-flex justify-content-between align-items-center mb-3">
-                      <h5 className="mb-0">📖 Full Summary: {expandedSummary.paper.title}</h5>
+                      <h5 className="mb-0">📖 AI-Powered Analysis: {expandedSummary.paper.title}</h5>
                       <Button 
                         variant="outline-secondary" 
                         size="sm"
@@ -234,6 +257,20 @@ const Home = ({ readingList, addToReadingList, settings, setSettings }) => {
                         ✕ Close
                       </Button>
                     </div>
+                    
+                    {/* Action Buttons */}
+                    <div className="d-flex gap-2 mb-3">
+                      <Button 
+                        variant="outline-info" 
+                        size="sm"
+                        onClick={() => handleResearchGaps(expandedSummary.paper)}
+                        disabled={loading}
+                      >
+                        🔍 Research Gaps
+                      </Button>
+                    </div>
+                    
+                    {/* Summary Content */}
                     <div 
                       style={{ 
                         maxHeight: '500px', 
@@ -243,11 +280,34 @@ const Home = ({ readingList, addToReadingList, settings, setSettings }) => {
                         borderRadius: '5px',
                         whiteSpace: 'pre-line',
                         fontSize: '14px',
-                        lineHeight: '1.6'
+                        lineHeight: '1.6',
+                        marginBottom: '15px'
                       }}
                     >
                       {expandedSummary.summary}
                     </div>
+                    
+                    {/* Research Gaps Content */}
+                    {expandedSummary.researchGaps && (
+                      <div>
+                        <h6 className="mb-2">🔍 Research Gaps & Future Directions:</h6>
+                        <div 
+                          style={{ 
+                            maxHeight: '400px', 
+                            overflowY: 'auto', 
+                            padding: '15px', 
+                            backgroundColor: '#fff3cd', 
+                            borderRadius: '5px',
+                            border: '1px solid #ffeaa7',
+                            whiteSpace: 'pre-line',
+                            fontSize: '14px',
+                            lineHeight: '1.6'
+                          }}
+                        >
+                          {expandedSummary.researchGaps}
+                        </div>
+                      </div>
+                    )}
                   </Card.Body>
                 </Card>
               )}
