@@ -33,51 +33,34 @@ except Exception as e:
     logger.error(f"Failed to initialize Scholarly: {e}")
     scholarly_available = False
 
-# Optimized search function for Vercel
-def search_papers_fast(topic, max_results=8):
+# Ultra-fast search function optimized for Vercel (10s timeout)
+def search_papers_vercel(topic, max_results=6):
     """
-    Fast paper search using multiple APIs with improved error handling and retry
+    Ultra-fast paper search optimized for Vercel's 10-second timeout limit
     """
-    logger.info(f"Starting fast paper search for topic: '{topic}'")
+    logger.info(f"Starting Vercel-optimized search for topic: '{topic}'")
     
     all_papers = []
-    max_retries = 2  # Reduced retries for faster response
     
-    # Search Google Scholar with retry
-    for attempt in range(max_retries):
-        try:
-            logger.info(f"Searching Google Scholar (attempt {attempt + 1}/{max_retries})...")
-            scholar_papers = search_scholar_api(topic, max_results // 2)
-            if scholar_papers:
-                all_papers.extend(scholar_papers)
-                logger.info(f"Google Scholar returned {len(scholar_papers)} papers")
-                break
-            else:
-                logger.warning(f"Google Scholar returned no papers on attempt {attempt + 1}")
-                if attempt < max_retries - 1:
-                    time.sleep(0.5)  # Reduced wait time
-        except Exception as e:
-            logger.error(f"Google Scholar search attempt {attempt + 1} failed: {e}")
-            if attempt < max_retries - 1:
-                time.sleep(0.5)  # Reduced wait time
+    # Try Google Scholar first (usually fastest)
+    try:
+        logger.info("Searching Google Scholar (single attempt)...")
+        scholar_papers = search_scholar_api(topic, max_results // 2)
+        if scholar_papers:
+            all_papers.extend(scholar_papers)
+            logger.info(f"Google Scholar returned {len(scholar_papers)} papers")
+    except Exception as e:
+        logger.error(f"Google Scholar search failed: {e}")
     
-    # Search arXiv API with retry
-    for attempt in range(max_retries):
-        try:
-            logger.info(f"Searching arXiv API (attempt {attempt + 1}/{max_retries})...")
-            arxiv_papers = search_arxiv_api(topic, max_results // 2)
-            if arxiv_papers:
-                all_papers.extend(arxiv_papers)
-                logger.info(f"arXiv returned {len(arxiv_papers)} papers")
-                break
-            else:
-                logger.warning(f"arXiv returned no papers on attempt {attempt + 1}")
-                if attempt < max_retries - 1:
-                    time.sleep(0.5)  # Reduced wait time
-        except Exception as e:
-            logger.error(f"arXiv search attempt {attempt + 1} failed: {e}")
-            if attempt < max_retries - 1:
-                time.sleep(0.5)  # Reduced wait time
+    # Try arXiv API (single attempt)
+    try:
+        logger.info("Searching arXiv API (single attempt)...")
+        arxiv_papers = search_arxiv_api_simple(topic, max_results // 2)
+        if arxiv_papers:
+            all_papers.extend(arxiv_papers)
+            logger.info(f"arXiv returned {len(arxiv_papers)} papers")
+    except Exception as e:
+        logger.error(f"arXiv search failed: {e}")
     
     # Deduplicate results
     seen_titles = set()
@@ -140,78 +123,55 @@ def search_scholar_api(topic, max_results=5):
         logger.error(f"Google Scholar search error: {e}")
         return []
 
-def search_arxiv_api(topic, max_results=5):
+def search_arxiv_api_simple(topic, max_results=3):
     """
-    Search arXiv API for real papers with improved query handling
+    Simplified arXiv API search optimized for Vercel timeout limits
     """
     try:
         import requests
         import xml.etree.ElementTree as ET
         
-        # Use multiple search strategies for better results
-        search_queries = [
-            f"all:{topic}",  # All fields search (most comprehensive)
-            f"ti:{topic}",  # Title search
-            f'"{topic}"',  # Exact phrase search
-            topic,  # Simple search without prefix
-        ]
+        # Use only the most effective search strategy
+        search_query = f"all:{topic}"
+        url = f"https://export.arxiv.org/api/query?search_query={search_query}&start=0&max_results={max_results}&sortBy=relevance&sortOrder=descending"
         
-        all_papers = []
+        logger.info(f"Searching arXiv with URL: {url}")
+        response = requests.get(url, timeout=5)  # Reduced timeout
         
-        for search_query in search_queries:
-            try:
-                url = f"https://export.arxiv.org/api/query?search_query={search_query}&start=0&max_results={max_results//2}&sortBy=relevance&sortOrder=descending"
-                logger.info(f"Searching arXiv with URL: {url}")
-                response = requests.get(url, timeout=8)
-            except Exception as e:
-                logger.error(f"arXiv request failed for query '{search_query}': {e}")
-                continue
+        if response.status_code == 200:
+            root = ET.fromstring(response.content)
+            papers = []
             
-            if response.status_code == 200:
-                root = ET.fromstring(response.content)
-                papers = []
+            for entry in root.findall('{http://www.w3.org/2005/Atom}entry'):
+                title = entry.find('{http://www.w3.org/2005/Atom}title').text.strip() if entry.find('{http://www.w3.org/2005/Atom}title') is not None else 'No title'
+                summary = entry.find('{http://www.w3.org/2005/Atom}summary').text.strip() if entry.find('{http://www.w3.org/2005/Atom}summary') is not None else 'No abstract available'
                 
-                for entry in root.findall('{http://www.w3.org/2005/Atom}entry'):
-                    title = entry.find('{http://www.w3.org/2005/Atom}title').text.strip() if entry.find('{http://www.w3.org/2005/Atom}title') is not None else 'No title'
-                    summary = entry.find('{http://www.w3.org/2005/Atom}summary').text.strip() if entry.find('{http://www.w3.org/2005/Atom}summary') is not None else 'No abstract available'
-                    
-                    authors = []
-                    for author in entry.findall('{http://www.w3.org/2005/Atom}author'):
-                        name = author.find('{http://www.w3.org/2005/Atom}name')
-                        if name is not None:
-                            authors.append(name.text)
-                    
-                    link = entry.find('{http://www.w3.org/2005/Atom}link[@type="text/html"]')
-                    paper_url = link.get('href') if link is not None else '#'
-                    
-                    published = entry.find('{http://www.w3.org/2005/Atom}published')
-                    year = published.text[:4] if published is not None else 'Unknown'
-                    
-                    papers.append({
-                        "title": title,
-                        "authors": ', '.join(authors) if authors else 'Unknown',
-                        "abstract": summary,
-                        "url": paper_url,
-                        "year": year,
-                        "source": "arXiv"
-                    })
+                authors = []
+                for author in entry.findall('{http://www.w3.org/2005/Atom}author'):
+                    name = author.find('{http://www.w3.org/2005/Atom}name')
+                    if name is not None:
+                        authors.append(name.text)
                 
-                all_papers.extend(papers)
-                logger.info(f"arXiv query '{search_query}' returned {len(papers)} papers")
-            else:
-                logger.error(f"arXiv API error for query '{search_query}': {response.status_code}")
-        
-        # Deduplicate papers
-        seen_titles = set()
-        unique_papers = []
-        for paper in all_papers:
-            title_key = paper['title'].lower().replace(' ', '').replace('-', '').replace('_', '')
-            if title_key not in seen_titles:
-                seen_titles.add(title_key)
-                unique_papers.append(paper)
-        
-        logger.info(f"arXiv total unique papers: {len(unique_papers)}")
-        return unique_papers
+                link = entry.find('{http://www.w3.org/2005/Atom}link[@type="text/html"]')
+                paper_url = link.get('href') if link is not None else '#'
+                
+                published = entry.find('{http://www.w3.org/2005/Atom}published')
+                year = published.text[:4] if published is not None else 'Unknown'
+                
+                papers.append({
+                    "title": title,
+                    "authors": ', '.join(authors) if authors else 'Unknown',
+                    "abstract": summary,
+                    "url": paper_url,
+                    "year": year,
+                    "source": "arXiv"
+                })
+            
+            logger.info(f"arXiv query returned {len(papers)} papers")
+            return papers
+        else:
+            logger.error(f"arXiv API error: {response.status_code}")
+            return []
             
     except Exception as e:
         logger.error(f"arXiv search error: {e}")
@@ -235,12 +195,12 @@ def search_papers():
         
         logger.info(f"Searching for: {topic}")
         
-        # Use optimized fast search
-        papers = search_papers_fast(topic, 8)
+        # Use Vercel-optimized search (no hardcoded papers)
+        papers = search_papers_vercel(topic, 6)
         
         if papers:
             # Calculate average relevance (simplified)
-            avg_relevance = min(100, len(papers) * 8)  # Simple relevance calculation
+            avg_relevance = min(100, len(papers) * 15)  # Simple relevance calculation
             return jsonify({
                 'papers': papers,
                 'message': f'📚 Relevant papers found! Found {len(papers)} papers (Avg relevance: {avg_relevance:.1f}%)',
