@@ -25,33 +25,29 @@ except Exception as e:
     client = None
     model = None
 
-try:
-    from scholarly import scholarly
-    scholarly_available = True
-    logger.info("Scholarly library initialized successfully")
-except Exception as e:
-    logger.error(f"Failed to initialize Scholarly: {e}")
-    scholarly_available = False
+# Scholarly removed for Vercel compatibility - using arXiv API only
+scholarly_available = False
+logger.info("Scholarly library disabled for Vercel compatibility")
 
-# ULTRA-MINIMAL search function for Vercel (5s timeout)
-def search_papers_vercel(topic, max_results=4):
+# VERCEL-OPTIMIZED search function (arXiv only, no scholarly)
+def search_papers_vercel(topic, max_results=6):
     """
-    ULTRA-MINIMAL paper search for Vercel's strict timeout limits
-    Only Google Scholar, no arXiv, maximum speed
+    Vercel-optimized paper search using only arXiv API
+    No scholarly dependency to avoid runtime issues
     """
-    logger.info(f"Starting ULTRA-MINIMAL search for topic: '{topic}'")
+    logger.info(f"Starting Vercel-optimized search for topic: '{topic}'")
     
-    # Try ONLY Google Scholar (fastest and most reliable)
+    # Try ONLY arXiv API (most reliable on Vercel)
     try:
-        logger.info("Searching Google Scholar ONLY (ultra-fast)...")
-        scholar_papers = search_scholar_api_fast(topic, max_results)
-        if scholar_papers:
-            logger.info(f"Google Scholar returned {len(scholar_papers)} papers")
-            return scholar_papers[:max_results]
+        logger.info("Searching arXiv API (Vercel-optimized)...")
+        arxiv_papers = search_arxiv_api_vercel(topic, max_results)
+        if arxiv_papers:
+            logger.info(f"arXiv returned {len(arxiv_papers)} papers")
+            return arxiv_papers[:max_results]
     except Exception as e:
-        logger.error(f"Google Scholar search failed: {e}")
+        logger.error(f"arXiv search failed: {e}")
     
-    # If Google Scholar fails, return empty (no fallbacks)
+    # If arXiv fails, return empty (no fallbacks)
     logger.info("No papers found - returning empty result")
     return []
 
@@ -145,9 +141,70 @@ def search_scholar_api(topic, max_results=5):
         logger.error(f"Google Scholar search error: {e}")
         return []
 
+def search_arxiv_api_vercel(topic, max_results=6):
+    """
+    Vercel-optimized arXiv API search - ultra-fast and reliable
+    """
+    try:
+        import requests
+        import xml.etree.ElementTree as ET
+        
+        # Use the most effective search strategy for Vercel
+        search_query = f"all:{topic}"
+        url = f"https://export.arxiv.org/api/query?search_query={search_query}&start=0&max_results={max_results}&sortBy=relevance&sortOrder=descending"
+        
+        logger.info(f"Vercel arXiv search URL: {url}")
+        response = requests.get(url, timeout=8)  # 8 second timeout for Vercel
+        
+        if response.status_code == 200:
+            root = ET.fromstring(response.content)
+            papers = []
+            
+            for entry in root.findall('{http://www.w3.org/2005/Atom}entry'):
+                # Fast extraction with minimal processing
+                title_elem = entry.find('{http://www.w3.org/2005/Atom}title')
+                title = title_elem.text.strip() if title_elem is not None else 'No title'
+                
+                summary_elem = entry.find('{http://www.w3.org/2005/Atom}summary')
+                summary = summary_elem.text.strip() if summary_elem is not None else 'No abstract available'
+                
+                # Fast author extraction
+                authors = []
+                for author in entry.findall('{http://www.w3.org/2005/Atom}author'):
+                    name_elem = author.find('{http://www.w3.org/2005/Atom}name')
+                    if name_elem is not None:
+                        authors.append(name_elem.text)
+                
+                # Fast URL extraction
+                link = entry.find('{http://www.w3.org/2005/Atom}link[@type="text/html"]')
+                paper_url = link.get('href') if link is not None else '#'
+                
+                # Fast year extraction
+                published = entry.find('{http://www.w3.org/2005/Atom}published')
+                year = published.text[:4] if published is not None else 'Unknown'
+                
+                papers.append({
+                    "title": title,
+                    "authors": ', '.join(authors) if authors else 'Unknown',
+                    "abstract": summary,
+                    "url": paper_url,
+                    "year": year,
+                    "source": "arXiv"
+                })
+            
+            logger.info(f"Vercel arXiv search returned {len(papers)} papers")
+            return papers
+        else:
+            logger.error(f"arXiv API error: {response.status_code}")
+            return []
+            
+    except Exception as e:
+        logger.error(f"Vercel arXiv search error: {e}")
+        return []
+
 def search_arxiv_api_simple(topic, max_results=3):
     """
-    Simplified arXiv API search optimized for Vercel timeout limits
+    Simplified arXiv API search (kept for compatibility)
     """
     try:
         import requests
@@ -217,8 +274,8 @@ def search_papers():
         
         logger.info(f"Searching for: {topic}")
         
-        # Use ULTRA-MINIMAL search (no hardcoded papers)
-        papers = search_papers_vercel(topic, 4)
+        # Use Vercel-optimized search (no hardcoded papers)
+        papers = search_papers_vercel(topic, 6)
         
         if papers:
             # Calculate average relevance (simplified)
