@@ -143,64 +143,110 @@ def search_scholar_api(topic, max_results=5):
 
 def search_arxiv_api_vercel(topic, max_results=6):
     """
-    Vercel-optimized arXiv API search - ultra-fast and reliable
+    Vercel-optimized arXiv API search with improved relevance filtering
     """
     try:
         import requests
         import xml.etree.ElementTree as ET
         
-        # Use the most effective search strategy for Vercel
-        search_query = f"all:{topic}"
-        url = f"https://export.arxiv.org/api/query?search_query={search_query}&start=0&max_results={max_results}&sortBy=relevance&sortOrder=descending"
+        # Try multiple search strategies for better relevance
+        search_queries = [
+            f"ti:{topic}",  # Title search (most relevant)
+            f"abs:{topic}",  # Abstract search
+            f"all:{topic}"   # Full text search
+        ]
         
-        logger.info(f"Vercel arXiv search URL: {url}")
-        response = requests.get(url, timeout=8)  # 8 second timeout for Vercel
+        all_papers = []
         
-        if response.status_code == 200:
-            root = ET.fromstring(response.content)
-            papers = []
+        for search_query in search_queries:
+            url = f"https://export.arxiv.org/api/query?search_query={search_query}&start=0&max_results={max_results}&sortBy=relevance&sortOrder=descending"
             
-            for entry in root.findall('{http://www.w3.org/2005/Atom}entry'):
-                # Fast extraction with minimal processing
-                title_elem = entry.find('{http://www.w3.org/2005/Atom}title')
-                title = title_elem.text.strip() if title_elem is not None else 'No title'
-                
-                summary_elem = entry.find('{http://www.w3.org/2005/Atom}summary')
-                summary = summary_elem.text.strip() if summary_elem is not None else 'No abstract available'
-                
-                # Fast author extraction
-                authors = []
-                for author in entry.findall('{http://www.w3.org/2005/Atom}author'):
-                    name_elem = author.find('{http://www.w3.org/2005/Atom}name')
-                    if name_elem is not None:
-                        authors.append(name_elem.text)
-                
-                # Fast URL extraction
-                link = entry.find('{http://www.w3.org/2005/Atom}link[@type="text/html"]')
-                paper_url = link.get('href') if link is not None else '#'
-                
-                # Fast year extraction
-                published = entry.find('{http://www.w3.org/2005/Atom}published')
-                year = published.text[:4] if published is not None else 'Unknown'
-                
-                papers.append({
-                    "title": title,
-                    "authors": ', '.join(authors) if authors else 'Unknown',
-                    "abstract": summary,
-                    "url": paper_url,
-                    "year": year,
-                    "source": "arXiv"
-                })
+            logger.info(f"Vercel arXiv search URL: {url}")
+            response = requests.get(url, timeout=8)
             
-            logger.info(f"Vercel arXiv search returned {len(papers)} papers")
-            return papers
-        else:
-            logger.error(f"arXiv API error: {response.status_code}")
-            return []
+            if response.status_code == 200:
+                root = ET.fromstring(response.content)
+                
+                for entry in root.findall('{http://www.w3.org/2005/Atom}entry'):
+                    # Fast extraction with minimal processing
+                    title_elem = entry.find('{http://www.w3.org/2005/Atom}title')
+                    title = title_elem.text.strip() if title_elem is not None else 'No title'
+                    
+                    summary_elem = entry.find('{http://www.w3.org/2005/Atom}summary')
+                    summary = summary_elem.text.strip() if summary_elem is not None else 'No abstract available'
+                    
+                    # Fast author extraction
+                    authors = []
+                    for author in entry.findall('{http://www.w3.org/2005/Atom}author'):
+                        name_elem = author.find('{http://www.w3.org/2005/Atom}name')
+                        if name_elem is not None:
+                            authors.append(name_elem.text)
+                    
+                    # Fast URL extraction
+                    link = entry.find('{http://www.w3.org/2005/Atom}link[@type="text/html"]')
+                    paper_url = link.get('href') if link is not None else '#'
+                    
+                    # Fast year extraction
+                    published = entry.find('{http://www.w3.org/2005/Atom}published')
+                    year = published.text[:4] if published is not None else 'Unknown'
+                    
+                    # Relevance filtering - only include papers that seem relevant
+                    if is_relevant_paper(title, summary, topic):
+                        paper = {
+                            "title": title,
+                            "authors": ', '.join(authors) if authors else 'Unknown',
+                            "abstract": summary,
+                            "url": paper_url,
+                            "year": year,
+                            "source": "arXiv"
+                        }
+                        all_papers.append(paper)
+                        
+                        # Stop if we have enough papers
+                        if len(all_papers) >= max_results:
+                            break
+                
+                # Stop if we found enough papers
+                if len(all_papers) >= max_results:
+                    break
+            else:
+                logger.error(f"arXiv API error: {response.status_code}")
+        
+        # Remove duplicates based on title
+        seen_titles = set()
+        unique_papers = []
+        for paper in all_papers:
+            title_key = paper['title'].lower().replace(' ', '')[:30]
+            if title_key not in seen_titles:
+                seen_titles.add(title_key)
+                unique_papers.append(paper)
+        
+        logger.info(f"Vercel arXiv search returned {len(unique_papers)} relevant papers")
+        return unique_papers[:max_results]
             
     except Exception as e:
         logger.error(f"Vercel arXiv search error: {e}")
         return []
+
+def is_relevant_paper(title, abstract, topic):
+    """
+    Simple relevance filter to exclude completely unrelated papers
+    """
+    topic_words = topic.lower().split()
+    title_lower = title.lower()
+    abstract_lower = abstract.lower()
+    
+    # Check if any topic words appear in title or abstract
+    for word in topic_words:
+        if len(word) > 3:  # Only check meaningful words
+            if word in title_lower or word in abstract_lower:
+                return True
+    
+    # For very short topics, check if the topic itself appears
+    if len(topic_words) == 1 and topic.lower() in title_lower:
+        return True
+    
+    return False
 
 def search_arxiv_api_simple(topic, max_results=3):
     """
